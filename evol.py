@@ -7,10 +7,31 @@ import copy
 import ast
 import argparse
 import sys
+import numpy
+import itertools
+from math import log
 
 BASES = "AGCT"
 TRANSITIONS = {'A':'G','G':'A','C':'T','T':'C'}
 TRANSVERSIONS = {'A':'CT','G':'CT','C':'AG','T':'AG'}
+
+# These are the "Tableau 20" colors as RGB
+TABLEAU20 = [(31, 119, 180), (174, 199, 232), (255, 127, 14), (255, 187, 120),  
+    (44, 160, 44), (152, 223, 138), (214, 39, 40), (255, 152, 150),  
+    (148, 103, 189), (197, 176, 213), (140, 86, 75), (196, 156, 148),  
+    (227, 119, 194), (247, 182, 210), (127, 127, 127), (199, 199, 199),  
+    (188, 189, 34), (219, 219, 141), (23, 190, 207), (158, 218, 229)]
+# Scale the RGB values to the [0, 1], which is the format matplotlib accepts
+for i in range(len(TABLEAU20)):  
+    r, g, b = TABLEAU20[i]  
+    TABLEAU20[i] = (r/255., g/255., b/255.)
+
+def get_gi(freqs):
+    gi = 2
+    for fr in freqs:
+        if fr > 0:
+            gi += fr*log(fr,2)
+    return gi
 
 
 def generate_rand_genome(genLen):
@@ -77,8 +98,9 @@ class Organism(object):
 class Population(object):
     def __init__(self, size, nMale, hasSexes, genLen, mutP, tiP, selStrength,
         posBaseWeights, bornLag, children_number, recFreq, recRate,
-        sexSelStrength):
+        sexSelStrength, popId=None):
         # general parameters
+        self.popId = popId
         self.size = size
         self.nMale = nMale
         self.hasSexes = hasSexes
@@ -113,8 +135,7 @@ class Population(object):
         for org in self.organisms:
             org.age += 1
             org.youngestChildAge += 1
-        dieInd = max(enumerate(self.organisms),
-            key=lambda ind_org: ind_org[1].age)[0] # oldest organism will die
+        dieInd = random.randint(0, self.size-1) # random organism will die
         descendantSex = self.organisms[dieInd].sex
         sexualReprod = random.random() < self.recFreq and self.recRate > 0
         if self.hasSexes:
@@ -149,10 +170,19 @@ class Population(object):
                 descendant = another_descendant
 
         if RECORD:
-            if self.recFreq == 1:
+            ##TODO: identify population by its ID
+            if self.sexSelStrength > 0:
+                DATA_FILE_SEXUAL_SEL.write("%s\n" % descendant.weight)
+                base_freqs = self.get_base_freqs()
+                DATA_FILE_SEXUAL_SEL_BASE_FREQ.write("%s\n" % str(base_freqs))
+            elif self.recFreq == 1:
                 DATA_FILE_SEXUAL.write("%s\n" % descendant.weight)
+                base_freqs = self.get_base_freqs()
+                DATA_FILE_SEXUAL_BASE_FREQ.write("%s\n" % str(base_freqs))
             else:
                 DATA_FILE_ASEXUAL.write("%s\n" % descendant.weight)
+                base_freqs = self.get_base_freqs()
+                DATA_FILE_ASEXUAL_BASE_FREQ.write("%s\n" % str(base_freqs))
 
         self.organisms.pop(dieInd)
         descendant_ind = bisect.bisect([org.weight for org in self.organisms],
@@ -205,34 +235,83 @@ class Environment(object):
 
 def run_animation(args):
     import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
     import matplotlib.animation as animation
 
-    fig, ax = plt.subplots( nrows=len(args.pop_names)+1, ncols=1,
-        figsize=(8,4*len(args.pop_names)), sharex=True, facecolor = 'w' )
-    ax[-1].set_ylim(0, 1)
-    ax[-1].set_xlim(0, 100)
-    ax[-1].set_xlabel("iteration")
-    ax[-1].set_ylabel("average weight")
-    ax[-1].grid(True)
-    ax[-1].set_title('weights')
+    n_pop = len(args.pop_names)
+    fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True, figsize=(10, 5))
+
+    # Remove the plot frame lines. They are unnecessary chartjunk.  
+    for ax in (ax1, ax2):
+        ax.spines["top"].set_visible(False)  
+        ax.spines["bottom"].set_visible(False)  
+        ax.spines["right"].set_visible(False)  
+        ax.spines["left"].set_visible(False)
+        ax.get_xaxis().tick_bottom()  
+        ax.get_yaxis().tick_left()
+
+    lower_y = 0
+    upper_y = 1
+    bar_height = 0.1
+    between_bars_step = (upper_y - lower_y)/(n_pop + 1.)
+    bar_pos = [(1 + i)*between_bars_step - bar_height/2 for i in range(n_pop)]
+    weight_line_pos = [(1 + i)*between_bars_step for i in range(n_pop)]
+
+    ax1.set_yticks([bp + bar_height/2 for bp in bar_pos])
+    ax1.set_yticklabels(args.pop_names, fontsize=14)
+    ax1.set_xlabel("Normalized weight", fontsize=14)
+    ax1.set_xlim((0, 1))
+    ax1.set_ylim((lower_y, upper_y))
+
+    ax2.set_xlabel("Nucleotide frequencies", fontsize=14)
+    ax2.set_xlim((0, 1))
+    ax2.set_ylim((lower_y, upper_y))
 
     populations = []
-    lines = []
-    xdata = []
-    lines_ydata = [[] for _ in args.pop_names]
-    labels = []
-    switch_line_xdata = []
-    switch_line_ydata = []
-    switch_line, = ax[-1].plot([], [], marker='^', linestyle=' ', color='k')
 
-    freq_ydata = []
-    freq_lines = []
+    # add gi and iteration number labels
+    iter_label = ax1.text(.015, 0.95, "0", fontsize=12,
+        bbox=dict(facecolor='white', edgecolor = "none"))
+    gi_labels = []
+    for i in range(n_pop):
+        gi_text = ax.text(.01, bar_pos[i] + .035, "0", fontsize=12)
+        gi_labels.append(gi_text)
 
-    colors = 'brgymc'
-    assert len(colors) >= len(args.pop_names)
-    print("Number of iterations: %s" % args.iterations)
-    print("Selection creterion switches: %s" % args.steps_between_switches)
+    # set ticks
+    x_ticks = numpy.linspace(0,1,11)
+    ax1.set_xticks(x_ticks)
+    ax1.set_xticklabels(list(map(str, x_ticks)))
+    ax2.set_xticks(x_ticks)
+    ax2.set_xticklabels(list(map(str, x_ticks)))
+    # plot vertical grid lines
+    for x in x_ticks[1:-1]:
+        ax1.plot([x,x], [lower_y, upper_y], linestyle="--", lw=0.5, color='k',
+            alpha=0.3)
+        ax2.plot([x,x], [lower_y, upper_y], linestyle="--", lw=0.5, color='k',
+            alpha=0.3)
+
+    # init barplots
+    weight_bars = ax1.barh(bar_pos, [0]*n_pop, bar_height,
+        color=TABLEAU20[-1], edgecolor = "none")
+    weight_std_lines = []
+    for wlp in weight_line_pos:
+        line, = ax1.plot([0, 0], [wlp, wlp], color='k', lw=1, marker='|',
+            linestyle=':', markersize=8)
+        weight_std_lines.append(line)
+    t_freq_bars = ax2.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[0],
+        edgecolor = "none")
+    c_freq_bars = ax2.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[1],
+        edgecolor = "none")
+    g_freq_bars = ax2.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[2],
+        edgecolor = "none")
+    a_freq_bars = ax2.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[3],
+        edgecolor = "none")
+    
+    # init populations
+    pop_weights = []
     for j, pn in enumerate(args.pop_names):
+        pop_weights.append(collections.deque([], 1000))
+
         print("Generating population: %s" % pn)
         print("    Pop size:    %s" % args.pop_size[j])
         print("    Male num:    %s" % args.male_number[j])
@@ -268,39 +347,15 @@ def run_animation(args):
                          args.rec_rate[j],
                          args.sex_sel_strength[j])
         populations.append(pop)
-        line, = ax[-1].plot([], [], lw=1, color=colors[j])
-        lines.append(line)
-        labels.append(pn)
-
-
-
-        ax[j].set_ylim(0, 1)
-        ax[j].set_xlim(0, 100)
-        ax[-2].set_ylabel("freq")
-        ax[j].grid(True)
-       #~ ax[j].set_title("%s base frequencies" % pn)
     
-        ax[j].set_axis_bgcolor(colors[j])
-        ax[j].patch.set_alpha(0.15)
-        freq_ydata.append([[],[],[],[]])
-        line1, = ax[j].plot([], [], lw=1, color='r')
-        line2, = ax[j].plot([], [], lw=1, color='y')
-        line3, = ax[j].plot([], [], lw=1, color='b')
-        line4, = ax[j].plot([], [], lw=1, color='g')
-        freq_lines.append([line1, line2, line3, line4])
-
-    ax[0].set_title("Populations nucleotides frequencies")
-
-
-
     env = Environment(args.pos_base_weights, args.alt_pos_base_weights,
         args.steps_between_switches, populations)
-    fig.legend(lines, labels, loc='lower left', ncol=4)
 
     iStart = 0
     def data_gen():
-        iCurr = iStart
         for iCurr in range(iStart, iStart+args.iterations):
+            if (iCurr+1)%1000 == 0:
+                print(iCurr+1)
             switch = env.trySwitch()
             for j, pop in enumerate(populations):
                 pop.moran_step()
@@ -315,37 +370,51 @@ def run_animation(args):
     def run(data):
         # update the data
         iteration, weights, freqs, switch = data
-        if xdata == [] or xdata[-1] < iteration:
-            xdata.append(iteration)
-            for ydata, w in zip(lines_ydata, weights):
-                ydata.append(w)
+        for i, pw in enumerate(weights):
+            pop_weights[i].append(pw)
+        
+        for wb, w in zip(weight_bars, weights):
+            wb.set_width(w)
 
-            xmin, xmax = ax[-1].get_xlim()
-            if iteration >= xmax:
-                for i in range(len(populations)+1):
-                    ax[i].set_xlim( iStart,
-                        min(1.5*xmax, iStart+args.iterations) )
-                ax[-1].figure.canvas.draw()
+        white_lines = []
+        for i, (y, line) in enumerate(zip(weight_line_pos, weight_std_lines)):
+            white_x = line.get_xdata()
+            white_y = line.get_ydata()
+            white_l, = ax1.plot(white_x, white_y, color="white", marker='|',
+                markersize=8, lw=1.1)
+            white_lines.append(white_l)
+            min_w = min(pop_weights[i])
+            max_w = max(pop_weights[i])
+            line.set_data([min_w, max_w], [y, y])
 
-            for line, ydata in zip(lines, lines_ydata):
-                line.set_data(xdata, ydata)
+        a_freqs = numpy.array([fq['A'] for fq in freqs])
+        g_freqs = numpy.array([fq['G'] for fq in freqs]) + a_freqs
+        c_freqs = numpy.array([fq['C'] for fq in freqs]) + g_freqs
+        t_freqs = numpy.array([fq['T'] for fq in freqs]) + c_freqs
 
-            for i, freq_dict in enumerate(freqs):
-                for j, b in enumerate(BASES):
-                    freq_ydata[i][j].append(freq_dict[b])
-                    if len(xdata) != len(freq_ydata[i][j]):
-                        print(freq_dict)
-                        print(freq_ydata)
-                        sys.exit(1)
-                    freq_lines[i][j].set_data(xdata, freq_ydata[i][j])
+        for fb, f in zip(a_freq_bars, a_freqs):
+            fb.set_width(f)
 
-        if switch:
-            switch_line_xdata.append(iteration)
-            switch_line_ydata.append(10)
-        switch_line.set_data(switch_line_xdata, switch_line_ydata)
+        for fb, f in zip(g_freq_bars, g_freqs):
+            fb.set_width(f)
 
-        return lines + [switch_line] + \
-            [l for pop_lines in freq_lines for l in pop_lines]
+        for fb, f in zip(c_freq_bars, c_freqs):
+            fb.set_width(f)
+
+        for fb, f in zip(t_freq_bars, t_freqs):
+            fb.set_width(f)
+
+        for gi_text, fr_dict in zip(gi_labels, freqs):
+            gi = get_gi(fr_dict.values())
+            gi_text.set_text("%.3f" % gi)
+
+        iter_label.set_text("%s" % iteration)
+
+        ret_iter = itertools.chain(white_lines, weight_bars, t_freq_bars,
+            c_freq_bars, g_freq_bars, a_freq_bars, weight_std_lines,
+            gi_labels, [iter_label])
+        return ret_iter
+
 
     ani = animation.FuncAnimation(fig, run, data_gen, blit=True, interval=20,
         repeat=False)
@@ -484,7 +553,7 @@ def main():
 
 
 if __name__ == "__main__":
-# python evol.py -pn asexual sexual -gl 100 -mp 0.05 0.12 -bl 0 -cn 4 -pbw A:[0.8,0.5]_G:[0.2,0.3]_C:[0.0,0.1]_T:[0.0,0.1] -rf 0 1 -rr 0 0.1 -hs 0 0 -ss 0 -sss 0 -sbs 45000 -i 40000
+# python evol.py -pn asexual sexual sexsel -gl 100 -mp 0.05 0.05 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 1 1 -rr 0 0.1 0.1 -hs 0 1 1 -ss 0 -sss 0 0 0.5 -sbs 45000 -i 40000
 
     RECORD = False
 
@@ -492,17 +561,29 @@ if __name__ == "__main__":
         DATA_FILE_SEXUAL = open("data/weights_sexual.txt", 'w')
         DATA_FILE_SEXUAL_REC = open("data/weights_sexual_rec.txt", 'w')
         DATA_FILE_SEXUAL_MUT = open("data/weights_sexual_mut.txt", 'w')
+        DATA_FILE_SEXUAL_BASE_FREQ = open("data/base_freq_sexual.txt", 'w')
+
         DATA_FILE_ASEXUAL = open("data/weights_asexual.txt", 'w')
         DATA_FILE_ASEXUAL_MUT = open("data/weights_asexual_mut.txt", 'w')
+        DATA_FILE_ASEXUAL_BASE_FREQ = open("data/base_freq_asexual.txt", 'w')
+
+        DATA_FILE_SEXUAL_SEL = open("data/weights_sexual_sel.txt", 'w')
+        DATA_FILE_SEXUAL_SEL_BASE_FREQ = open("data/base_freq_sexsel.txt", 'w')
 
     main()
 
     if RECORD:
         DATA_FILE_SEXUAL.close()
         DATA_FILE_SEXUAL_REC.close()
-        DATA_FILE_SEXUAL_MUT.close()
+        DATA_FILE_SEXUAL_MUT.close
+        DATA_FILE_SEXUAL_BASE_FREQ.close()
+
         DATA_FILE_ASEXUAL.close()
         DATA_FILE_ASEXUAL_MUT.close()
+        DATA_FILE_ASEXUAL_BASE_FREQ.close()
+
+        DATA_FILE_SEXUAL_SEL.close()
+        DATA_FILE_SEXUAL_SEL_BASE_FREQ.close()
 '''
 Launch example:
 
