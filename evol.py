@@ -82,16 +82,16 @@ class Organism(object):
         if not secondParentOrg is None:
             child.recombine(secondParentOrg, recRate)
             secondParentOrg.nChildren += 1
-            if RECORD:
-                child.set_weight(posBaseWeights)
-                DATA_FILE_SEXUAL_REC.write("%s\n" % child.weight)
+            # if RECORD:
+            #     child.set_weight(posBaseWeights)
+            #     DATA_FILE_SEXUAL_REC.write("%s\n" % child.weight)
         child.mutate(mutP, tiP)
         child.set_weight(posBaseWeights)
-        if RECORD:
-            if not secondParentOrg is None:
-                DATA_FILE_SEXUAL_MUT.write("%s\n" % child.weight)
-            else:
-                DATA_FILE_ASEXUAL_MUT.write("%s\n" % child.weight)
+        # if RECORD:
+        #     if not secondParentOrg is None:
+        #         DATA_FILE_SEXUAL_MUT.write("%s\n" % child.weight)
+        #     else:
+        #         DATA_FILE_ASEXUAL_MUT.write("%s\n" % child.weight)
         return child
 
 
@@ -171,18 +171,22 @@ class Population(object):
 
         if RECORD:
             ##TODO: identify population by its ID
-            if self.sexSelStrength > 0:
-                DATA_FILE_SEXUAL_SEL.write("%s\n" % descendant.weight)
+            if self.popId == "sexLow":
+                DATA_FILE_SEXUAL_LOW.write("%s\n" % descendant.weight)
                 base_freqs = self.get_base_freqs()
-                DATA_FILE_SEXUAL_SEL_BASE_FREQ.write("%s\n" % str(base_freqs))
-            elif self.recFreq == 1:
-                DATA_FILE_SEXUAL.write("%s\n" % descendant.weight)
+                DATA_FILE_SEXUAL_LOW_BASE_FREQ.write("%s\n" % str(base_freqs))
+            elif self.popId == "sexHigh":
+                DATA_FILE_SEXUAL_HIGH.write("%s\n" % descendant.weight)
                 base_freqs = self.get_base_freqs()
-                DATA_FILE_SEXUAL_BASE_FREQ.write("%s\n" % str(base_freqs))
-            else:
-                DATA_FILE_ASEXUAL.write("%s\n" % descendant.weight)
+                DATA_FILE_SEXUAL_HIGH_BASE_FREQ.write("%s\n" % str(base_freqs))
+            elif self.popId == "asexLow":
+                DATA_FILE_ASEXUAL_LOW.write("%s\n" % descendant.weight)
                 base_freqs = self.get_base_freqs()
-                DATA_FILE_ASEXUAL_BASE_FREQ.write("%s\n" % str(base_freqs))
+                DATA_FILE_ASEXUAL_LOW_BASE_FREQ.write("%s\n" % str(base_freqs))
+            elif self.popId == "asexHigh":
+                DATA_FILE_ASEXUAL_HIGH.write("%s\n" % descendant.weight)
+                base_freqs = self.get_base_freqs()
+                DATA_FILE_ASEXUAL_HIGH_BASE_FREQ.write("%s\n" % str(base_freqs))
 
         self.organisms.pop(dieInd)
         descendant_ind = bisect.bisect([org.weight for org in self.organisms],
@@ -269,9 +273,17 @@ def run_animation(args):
 
     populations = []
 
+    white_rect = Rectangle((0, 0), 1, upper_y, facecolor='white',
+            edgecolor = "none")
+    ax1.add_patch(white_rect)
+    ax1_background = [white_rect] # contains background rect and grid lines
+
     # add gi and iteration number labels
     iter_label = ax1.text(.015, 0.95, "0", fontsize=12,
         bbox=dict(facecolor='white', edgecolor = "none"))
+    switch_label = ax1.text(.015, 0.9, "0", fontsize=12, color=TABLEAU20[6],
+        bbox=dict(facecolor="white", edgecolor = "none"))
+    counter_labels = [iter_label, switch_label]
     gi_labels = []
     for i in range(n_pop):
         gi_text = ax.text(.01, bar_pos[i] + .035, "0", fontsize=12)
@@ -283,16 +295,18 @@ def run_animation(args):
     ax1.set_xticklabels(list(map(str, x_ticks)))
     ax2.set_xticks(x_ticks)
     ax2.set_xticklabels(list(map(str, x_ticks)))
+
     # plot vertical grid lines
     for x in x_ticks[1:-1]:
-        ax1.plot([x,x], [lower_y, upper_y], linestyle="--", lw=0.5, color='k',
-            alpha=0.3)
+        l, = ax1.plot([x,x], [lower_y, upper_y], linestyle="--", lw=0.5,
+            color='k', alpha=0.3)
+        ax1_background.append(l)
         ax2.plot([x,x], [lower_y, upper_y], linestyle="--", lw=0.5, color='k',
             alpha=0.3)
 
     # init barplots
     weight_bars = ax1.barh(bar_pos, [0]*n_pop, bar_height,
-        color=TABLEAU20[-1], edgecolor = "none")
+        color=TABLEAU20[5], edgecolor = "none")
     weight_std_lines = []
     for wlp in weight_line_pos:
         line, = ax1.plot([0, 0], [wlp, wlp], color='k', lw=1, marker='|',
@@ -345,44 +359,39 @@ def run_animation(args):
                          args.children_number[j],
                          args.rec_freq[j],
                          args.rec_rate[j],
-                         args.sex_sel_strength[j])
+                         args.sex_sel_strength[j],
+                         pn)
         populations.append(pop)
     
     env = Environment(args.pos_base_weights, args.alt_pos_base_weights,
         args.steps_between_switches, populations)
 
-    iStart = 0
     def data_gen():
+        iStart = 0
+        iSwitch = 0
         for iCurr in range(iStart, iStart+args.iterations):
-            if (iCurr+1)%1000 == 0:
-                print(iCurr+1)
             switch = env.trySwitch()
+            iSwitch = 0 if switch else iSwitch + 1
             for j, pop in enumerate(populations):
                 pop.moran_step()
             iCurr += 1
             yield (iCurr,
                    [pop.get_average_weight() for pop in populations],
                    [pop.get_base_freqs() for pop in populations],
-                   switch)
+                   iSwitch)
 
     ## TODO: add init_func for FuncAnimation
 
     def run(data):
         # update the data
-        iteration, weights, freqs, switch = data
+        iteration, weights, freqs, iSwitch = data
         for i, pw in enumerate(weights):
             pop_weights[i].append(pw)
-        
+
         for wb, w in zip(weight_bars, weights):
             wb.set_width(w)
 
-        white_lines = []
         for i, (y, line) in enumerate(zip(weight_line_pos, weight_std_lines)):
-            white_x = line.get_xdata()
-            white_y = line.get_ydata()
-            white_l, = ax1.plot(white_x, white_y, color="white", marker='|',
-                markersize=8, lw=1.1)
-            white_lines.append(white_l)
             min_w = min(pop_weights[i])
             max_w = max(pop_weights[i])
             line.set_data([min_w, max_w], [y, y])
@@ -409,14 +418,15 @@ def run_animation(args):
             gi_text.set_text("%.3f" % gi)
 
         iter_label.set_text("%s" % iteration)
+        switch_label.set_text("%s" % iSwitch)
 
-        ret_iter = itertools.chain(white_lines, weight_bars, t_freq_bars,
-            c_freq_bars, g_freq_bars, a_freq_bars, weight_std_lines,
-            gi_labels, [iter_label])
-        return ret_iter
+        to_redraw_list = itertools.chain(ax1_background, counter_labels,
+            weight_bars, weight_std_lines, t_freq_bars, c_freq_bars,
+            g_freq_bars, a_freq_bars, gi_labels)
+        return to_redraw_list
 
 
-    ani = animation.FuncAnimation(fig, run, data_gen, blit=True, interval=20,
+    ani = animation.FuncAnimation(fig, run, data_gen, blit=True, interval=10,
         repeat=False)
     plt.show()
 
@@ -553,37 +563,44 @@ def main():
 
 
 if __name__ == "__main__":
-# python evol.py -pn asexual sexual sexsel -gl 100 -mp 0.05 0.05 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 1 1 -rr 0 0.1 0.1 -hs 0 1 1 -ss 0 -sss 0 0 0.5 -sbs 45000 -i 40000
+# figure3: python evol.py -pn asexual sexual -gl 100 -mp 0.05 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 1 -rr 0 0.1 -hs 0 1 -ss 0 -sss 0 0 -sbs 55000 -i 50000
+# figure2: python evol.py -pn asexLow asexHigh sexLow sexHigh -gl 100 -mp 0.05 0.1 0.05 0.1 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 0 1 1 -rr 0 0 0.1 0.1 -hs 0 0 1 1 -ss 0 -sss 0 -sbs 55000 -i 50000
 
     RECORD = False
 
     if RECORD:
-        DATA_FILE_SEXUAL = open("data/weights_sexual.txt", 'w')
-        DATA_FILE_SEXUAL_REC = open("data/weights_sexual_rec.txt", 'w')
-        DATA_FILE_SEXUAL_MUT = open("data/weights_sexual_mut.txt", 'w')
-        DATA_FILE_SEXUAL_BASE_FREQ = open("data/base_freq_sexual.txt", 'w')
+        DATA_FILE_SEXUAL_LOW = open("data/weights_sexual_low.txt", 'w')
+        # DATA_FILE_SEXUAL_REC = open("data/weights_sexual_rec.txt", 'w')
+        # DATA_FILE_SEXUAL_MUT = open("data/weights_sexual_mut.txt", 'w')
+        DATA_FILE_SEXUAL_LOW_BASE_FREQ = open("data/base_freq_sexual_low.txt", 'w')
 
-        DATA_FILE_ASEXUAL = open("data/weights_asexual.txt", 'w')
-        DATA_FILE_ASEXUAL_MUT = open("data/weights_asexual_mut.txt", 'w')
-        DATA_FILE_ASEXUAL_BASE_FREQ = open("data/base_freq_asexual.txt", 'w')
+        DATA_FILE_SEXUAL_HIGH = open("data/weights_sexual_high.txt", 'w')
+        DATA_FILE_SEXUAL_HIGH_BASE_FREQ = open("data/base_freq_sexual_high.txt", 'w')
 
-        DATA_FILE_SEXUAL_SEL = open("data/weights_sexual_sel.txt", 'w')
-        DATA_FILE_SEXUAL_SEL_BASE_FREQ = open("data/base_freq_sexsel.txt", 'w')
+        DATA_FILE_ASEXUAL_LOW = open("data/weights_asexual_low.txt", 'w')
+        # DATA_FILE_ASEXUAL_MUT = open("data/weights_asexual_mut.txt", 'w')
+        DATA_FILE_ASEXUAL_LOW_BASE_FREQ = open("data/base_freq_asexual_low.txt", 'w')
+
+        DATA_FILE_ASEXUAL_HIGH = open("data/weights_asexual_high.txt", 'w')
+        DATA_FILE_ASEXUAL_HIGH_BASE_FREQ = open("data/base_freq_asexual_high.txt", 'w')
 
     main()
 
     if RECORD:
-        DATA_FILE_SEXUAL.close()
-        DATA_FILE_SEXUAL_REC.close()
-        DATA_FILE_SEXUAL_MUT.close
-        DATA_FILE_SEXUAL_BASE_FREQ.close()
+        DATA_FILE_SEXUAL_LOW.close()
+        # DATA_FILE_SEXUAL_REC.close()
+        # DATA_FILE_SEXUAL_MUT.close
+        DATA_FILE_SEXUAL_LOW_BASE_FREQ.close()
 
-        DATA_FILE_ASEXUAL.close()
-        DATA_FILE_ASEXUAL_MUT.close()
-        DATA_FILE_ASEXUAL_BASE_FREQ.close()
+        DATA_FILE_SEXUAL_HIGH.close()
+        DATA_FILE_SEXUAL_HIGH_BASE_FREQ.close()
 
-        DATA_FILE_SEXUAL_SEL.close()
-        DATA_FILE_SEXUAL_SEL_BASE_FREQ.close()
+        DATA_FILE_ASEXUAL_LOW.close()
+        # DATA_FILE_ASEXUAL_MUT.close()
+        DATA_FILE_ASEXUAL_LOW_BASE_FREQ.close()
+
+        DATA_FILE_ASEXUAL_HIGH.close()
+        DATA_FILE_ASEXUAL_HIGH_BASE_FREQ.close()
 '''
 Launch example:
 
