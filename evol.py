@@ -170,23 +170,23 @@ class Population(object):
                 descendant = another_descendant
 
         if RECORD:
-            ##TODO: identify population by its ID
-            if self.popId == "sexLow":
-                DATA_FILE_SEXUAL_LOW.write("%s\n" % descendant.weight)
+            if self.popId == "asex005":
+                ASEX005_WEIGHTS_FILE.write("%s\n" % self.get_average_weight())
                 base_freqs = self.get_base_freqs()
-                DATA_FILE_SEXUAL_LOW_BASE_FREQ.write("%s\n" % str(base_freqs))
-            elif self.popId == "sexHigh":
-                DATA_FILE_SEXUAL_HIGH.write("%s\n" % descendant.weight)
+                ASEX005_BASE_FREQ_FILE.write("%s\n" % str(base_freqs))
+            elif self.popId == "asex01":
+                ASEX01_WEIGHTS_FILE.write("%s\n" % self.get_average_weight())
                 base_freqs = self.get_base_freqs()
-                DATA_FILE_SEXUAL_HIGH_BASE_FREQ.write("%s\n" % str(base_freqs))
-            elif self.popId == "asexLow":
-                DATA_FILE_ASEXUAL_LOW.write("%s\n" % descendant.weight)
+                ASEX01_BASE_FREQ_FILE.write("%s\n" % str(base_freqs))
+            elif self.popId == "sex005":
+                SEX005_WEIGHTS_FILE.write("%s\n" % self.get_average_weight())
                 base_freqs = self.get_base_freqs()
-                DATA_FILE_ASEXUAL_LOW_BASE_FREQ.write("%s\n" % str(base_freqs))
-            elif self.popId == "asexHigh":
-                DATA_FILE_ASEXUAL_HIGH.write("%s\n" % descendant.weight)
+                SEX005_BASE_FREQ_FILE.write("%s\n" % str(base_freqs))
+            elif self.popId == "sex01":
+                SEX01_WEIGHTS_FILE.write("%s\n" % self.get_average_weight())
                 base_freqs = self.get_base_freqs()
-                DATA_FILE_ASEXUAL_HIGH_BASE_FREQ.write("%s\n" % str(base_freqs))
+                SEX01_BASE_FREQ_FILE.write("%s\n" % str(base_freqs))
+
 
         self.organisms.pop(dieInd)
         descendant_ind = bisect.bisect([org.weight for org in self.organisms],
@@ -563,44 +563,39 @@ def main():
 
 
 if __name__ == "__main__":
-# figure3: python evol.py -pn asexual sexual -gl 100 -mp 0.05 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 1 -rr 0 0.1 -hs 0 1 -ss 0 -sss 0 0 -sbs 55000 -i 50000
-# figure2: python evol.py -pn asexLow asexHigh sexLow sexHigh -gl 100 -mp 0.05 0.1 0.05 0.1 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 0 1 1 -rr 0 0 0.1 0.1 -hs 0 0 1 1 -ss 0 -sss 0 -sbs 55000 -i 50000
-
-    RECORD = False
+# figure3:  python evol.py -pn asexual sexual -gl 100 -mp 0.05 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 1 -rr 0 0.1 -hs 0 1 -ss 0 -sss 0 0 -sbs 55000 -i 50000
+# figure2:  python evol.py -pn asex005 asex01 sex005 sex01 -ps 100 -gl 100 -mp 0.05 0.1 0.05 0.1 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 0 1 1 -rr 0 0 0.1 0.1 -hs 0 0 1 1 -ss 0 -sss 0 -sbs 55000 -i 50000
+# figure1s: python evol.py -pn asex2 asex3 sex2 sex3 -gl 100 -mp 0.05 -bl 0 -cn 2 3 2 3 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 0 1 1 -rr 0 0 0.1 0.1 -hs 0 0 1 1 -ss 0 -sss 0 -sbs 55000 -i 50000
+# figure2s: python evol.py -pn asex100 asex200 asex400 asex800 -gl 100 200 400 800 -mp 0.02 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 -rr 0 -hs 0 -ss 0 -sss 0 -sbs 55000 -i 50000
+# figure3s: python evol.py -pn asex sex sexsel -gl 100 -mp 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 1 1 -rr 0 0.1 0.1 -hs 0 1 1 -ss 0 -sss 0 0 0.5 -sbs 55000 -i 50000
+# figure4s: python evol.py -pn sex002 sex005 sex01 sex05 sex1 -gl 100 -mp 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 1 -rr 0.02 0.05 0.1 0.5 1.0 -hs 1 -ss 0 -sss 0 -sbs 55000 -i 50000
+# figure5s: python evol.py -pn sex005 sex01 sex02 sex05 sex1 -gl 100 -mp 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0.05 0.1 0.2 0.5 1 -rr 0.1 -hs 1 -ss 0 -sss 0 -sbs 55000 -i 50000
+    RECORD = True
 
     if RECORD:
-        DATA_FILE_SEXUAL_LOW = open("data/weights_sexual_low.txt", 'w')
-        # DATA_FILE_SEXUAL_REC = open("data/weights_sexual_rec.txt", 'w')
-        # DATA_FILE_SEXUAL_MUT = open("data/weights_sexual_mut.txt", 'w')
-        DATA_FILE_SEXUAL_LOW_BASE_FREQ = open("data/base_freq_sexual_low.txt", 'w')
+        ASEX005_WEIGHTS_FILE = open("data/asex005_fig2_weights.txt", 'w')
+        ASEX01_WEIGHTS_FILE = open("data/asex01_fig2_weights.txt", 'w')
+        SEX005_WEIGHTS_FILE = open("data/sex005_fig2_weights.txt", 'w')
+        SEX01_WEIGHTS_FILE = open("data/sex01_fig2_weights.txt", 'w')
 
-        DATA_FILE_SEXUAL_HIGH = open("data/weights_sexual_high.txt", 'w')
-        DATA_FILE_SEXUAL_HIGH_BASE_FREQ = open("data/base_freq_sexual_high.txt", 'w')
-
-        DATA_FILE_ASEXUAL_LOW = open("data/weights_asexual_low.txt", 'w')
-        # DATA_FILE_ASEXUAL_MUT = open("data/weights_asexual_mut.txt", 'w')
-        DATA_FILE_ASEXUAL_LOW_BASE_FREQ = open("data/base_freq_asexual_low.txt", 'w')
-
-        DATA_FILE_ASEXUAL_HIGH = open("data/weights_asexual_high.txt", 'w')
-        DATA_FILE_ASEXUAL_HIGH_BASE_FREQ = open("data/base_freq_asexual_high.txt", 'w')
+        ASEX005_BASE_FREQ_FILE = open("data/asex005_fig2_base_freq.txt", 'w')
+        ASEX01_BASE_FREQ_FILE = open("data/asex01_fig2_base_freq.txt", 'w')
+        SEX005_BASE_FREQ_FILE = open("data/sex005_fig2_base_freq.txt", 'w')
+        SEX01_BASE_FREQ_FILE = open("data/sex01_fig2_base_freq.txt", 'w')
 
     main()
 
     if RECORD:
-        DATA_FILE_SEXUAL_LOW.close()
-        # DATA_FILE_SEXUAL_REC.close()
-        # DATA_FILE_SEXUAL_MUT.close
-        DATA_FILE_SEXUAL_LOW_BASE_FREQ.close()
+        ASEX005_WEIGHTS_FILE.close()
+        ASEX01_WEIGHTS_FILE.close()
+        SEX005_WEIGHTS_FILE.close()
+        SEX01_WEIGHTS_FILE.close()
 
-        DATA_FILE_SEXUAL_HIGH.close()
-        DATA_FILE_SEXUAL_HIGH_BASE_FREQ.close()
+        ASEX005_BASE_FREQ_FILE.close()
+        ASEX01_BASE_FREQ_FILE.close()
+        SEX005_BASE_FREQ_FILE.close()
+        SEX01_BASE_FREQ_FILE.close()
 
-        DATA_FILE_ASEXUAL_LOW.close()
-        # DATA_FILE_ASEXUAL_MUT.close()
-        DATA_FILE_ASEXUAL_LOW_BASE_FREQ.close()
-
-        DATA_FILE_ASEXUAL_HIGH.close()
-        DATA_FILE_ASEXUAL_HIGH_BASE_FREQ.close()
 '''
 Launch example:
 
