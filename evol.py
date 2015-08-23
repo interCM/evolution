@@ -46,10 +46,19 @@ def mutate_base(base, tiP):
 
 
 def parentIndexGenerator(recRate):
-    ind = 0
+    ind = random.randint(0, 1)
     while True:
         ind = (ind+1)%2 if random.random() < recRate else ind
         yield ind
+
+
+def write_info_dict(info_dict, f):
+    for k, v in info_dict.iteritems():
+        if isinstance(v, list):
+            for e in v:
+                f.write("%s\t%s\n" % (k, e))
+        else:
+            f.write("%s\t%s\n" % (k, v))
 
 
 class Organism(object):
@@ -58,23 +67,34 @@ class Organism(object):
         self.sex = sex
         self.age = 0
         self.weight = 1
-        self.youngestChildAge = 1000
+        self.youngestChildAge = 1000000
         self.nChildren = 0
+        self.nMut = 0
     
     def set_weight(self, posBaseWeights):
         self.weight = sum(posBaseWeights[b][i]
                 for i,b in enumerate(self.genome))
 
+    # Modifies genome sequence with respect to the given probabilities of
+    # mutation and transition.
+    # Sets nMut equal to the number of occurred mutations 
     def mutate(self, mutP, tiP):
-        self.genome = [ mutate_base(b,tiP) if random.random() < mutP else b
-            for b in self.genome ]
+        n = len(self.genome)
+        mut_pos_ind = numpy.arange(n)[numpy.random.rand(n) < mutP]
+        self.nMut = len(mut_pos_ind)
+        for i in mut_pos_ind:
+            self.genome[i] = mutate_base(self.genome[i],tiP)
 
     def recombine(self, org, recRate):
         parInd = parentIndexGenerator(recRate)
         self.genome = [ bb[next(parInd)]
             for bb in zip(self.genome, org.genome) ]
 
-    def get_child(self, sex, mutP, tiP, posBaseWeights,
+    # Returns:
+    # child - new Organism instance
+    # Modifies:
+    # info_dict - a dictionary with mutation and recombination statistics
+    def get_child(self, sex, mutP, tiP, posBaseWeights, info_dict,
         recRate=0, secondParentOrg=None):
         self.youngestChildAge = 0
         self.nChildren += 1
@@ -82,16 +102,11 @@ class Organism(object):
         if not secondParentOrg is None:
             child.recombine(secondParentOrg, recRate)
             secondParentOrg.nChildren += 1
-            # if RECORD:
-            #     child.set_weight(posBaseWeights)
-            #     DATA_FILE_SEXUAL_REC.write("%s\n" % child.weight)
+            child.set_weight(posBaseWeights)
+            info_dict["after_rec_weight"].append(child.weight)
         child.mutate(mutP, tiP)
         child.set_weight(posBaseWeights)
-        # if RECORD:
-        #     if not secondParentOrg is None:
-        #         DATA_FILE_SEXUAL_MUT.write("%s\n" % child.weight)
-        #     else:
-        #         DATA_FILE_ASEXUAL_MUT.write("%s\n" % child.weight)
+        info_dict["after_mut_weight"].append(child.weight)
         return child
 
 
@@ -132,6 +147,11 @@ class Population(object):
         assert ((self.recFreq > 0 and self.recRate > 0) or
             (self.recFreq == 0 and self.recRate == 0))
         assert self.children_number > 0
+        # step_info_dict contains different information for recording
+        # if None - nothing will be recorded
+        # value in step_info_dict is a list than all list items will be
+        # recorded consequently with the same tag - corresponding tag
+        step_info_dict = collections.defaultdict(list)
         for org in self.organisms:
             org.age += 1
             org.youngestChildAge += 1
@@ -162,36 +182,25 @@ class Population(object):
                 (len(potential2ndParents)-1))
             parent2 = random.choice(potential2ndParents[parent2LowerInd:])
         descendant = parent.get_child(descendantSex, self.mutP, self.tiP,
-            self.posBaseWeights, self.recRate, parent2)
+            self.posBaseWeights, step_info_dict, self.recRate, parent2)
         for _ in range(self.children_number - 1):
             another_descendant = parent.get_child(descendantSex, self.mutP,
-                self.tiP, self.posBaseWeights, self.recRate, parent2)
+                self.tiP, self.posBaseWeights, step_info_dict, self.recRate,
+                parent2)
             if another_descendant.weight > descendant.weight:
                 descendant = another_descendant
 
-        if RECORD:
-            if self.popId == "asex005":
-                ASEX005_WEIGHTS_FILE.write("%s\n" % self.get_average_weight())
-                base_freqs = self.get_base_freqs()
-                ASEX005_BASE_FREQ_FILE.write("%s\n" % str(base_freqs))
-            elif self.popId == "asex01":
-                ASEX01_WEIGHTS_FILE.write("%s\n" % self.get_average_weight())
-                base_freqs = self.get_base_freqs()
-                ASEX01_BASE_FREQ_FILE.write("%s\n" % str(base_freqs))
-            elif self.popId == "sex005":
-                SEX005_WEIGHTS_FILE.write("%s\n" % self.get_average_weight())
-                base_freqs = self.get_base_freqs()
-                SEX005_BASE_FREQ_FILE.write("%s\n" % str(base_freqs))
-            elif self.popId == "sex01":
-                SEX01_WEIGHTS_FILE.write("%s\n" % self.get_average_weight())
-                base_freqs = self.get_base_freqs()
-                SEX01_BASE_FREQ_FILE.write("%s\n" % str(base_freqs))
-
+        # record required parameters
+        step_info_dict["after_sel_weight"] = descendant.weight
+        step_info_dict["average_weight"] = self.get_average_weight()
+        step_info_dict["n_mut"] = descendant.nMut
+        step_info_dict["base_freqs"] = self.get_base_freqs()
 
         self.organisms.pop(dieInd)
         descendant_ind = bisect.bisect([org.weight for org in self.organisms],
             descendant.weight)
         self.organisms.insert(descendant_ind, descendant)
+        return step_info_dict
 
     def get_average_weight(self):
         return sum(o.weight for o in self.organisms)/(self.size*self.genLen)
@@ -243,10 +252,10 @@ def run_animation(args):
     import matplotlib.animation as animation
 
     n_pop = len(args.pop_names)
-    fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True, figsize=(10, 5))
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, sharey=True, figsize=(15, 5))
 
     # Remove the plot frame lines. They are unnecessary chartjunk.  
-    for ax in (ax1, ax2):
+    for ax in (ax1, ax2, ax3):
         ax.spines["top"].set_visible(False)  
         ax.spines["bottom"].set_visible(False)  
         ax.spines["right"].set_visible(False)  
@@ -267,9 +276,17 @@ def run_animation(args):
     ax1.set_xlim((0, 1))
     ax1.set_ylim((lower_y, upper_y))
 
-    ax2.set_xlabel("Nucleotide frequencies", fontsize=14)
-    ax2.set_xlim((0, 1))
+    ax2.set_yticks([bp + bar_height/2 for bp in bar_pos])
+    ax2.set_yticklabels(args.pop_names, fontsize=14)
+    ax2.set_xlabel("Mutations in descendant", fontsize=14)
+    max_average_mut = max(g*m for g, m in zip(args.genome_len, args.mut_prob))
+    upper_mut_x_lim = max(4*int(max_average_mut), 4)
+    ax2.set_xlim((0, upper_mut_x_lim))
     ax2.set_ylim((lower_y, upper_y))
+
+    ax3.set_xlabel("Nucleotide frequencies", fontsize=14)
+    ax3.set_xlim((0, 1))
+    ax3.set_ylim((lower_y, upper_y))
 
     populations = []
 
@@ -277,6 +294,10 @@ def run_animation(args):
             edgecolor = "none")
     ax1.add_patch(white_rect)
     ax1_background = [white_rect] # contains background rect and grid lines
+    white_rect = Rectangle((0, 0), upper_mut_x_lim, upper_y,
+        facecolor='white', edgecolor = "none")
+    ax2.add_patch(white_rect)
+    ax2_background = [white_rect]
 
     # add gi and iteration number labels
     iter_label = ax1.text(.015, 0.95, "0", fontsize=12,
@@ -293,38 +314,57 @@ def run_animation(args):
     x_ticks = numpy.linspace(0,1,11)
     ax1.set_xticks(x_ticks)
     ax1.set_xticklabels(list(map(str, x_ticks)))
-    ax2.set_xticks(x_ticks)
-    ax2.set_xticklabels(list(map(str, x_ticks)))
+    ax3.set_xticks(x_ticks)
+    ax3.set_xticklabels(list(map(str, x_ticks)))
+
+    ax2_x_ticks = numpy.arange(upper_mut_x_lim+1)
+    ax2.set_xticks(ax2_x_ticks)
+    ax2_tick_labels = [str(t) if i%4==0 else ""
+        for i, t in enumerate(ax2_x_ticks)]
+    ax2.set_xticklabels(ax2_tick_labels)
+    # ax2.set_xticklabels(list(map(str, ax2_x_ticks)))
 
     # plot vertical grid lines
     for x in x_ticks[1:-1]:
         l, = ax1.plot([x,x], [lower_y, upper_y], linestyle="--", lw=0.5,
             color='k', alpha=0.3)
         ax1_background.append(l)
-        ax2.plot([x,x], [lower_y, upper_y], linestyle="--", lw=0.5, color='k',
+        ax3.plot([x,x], [lower_y, upper_y], linestyle="--", lw=0.5, color='k',
             alpha=0.3)
 
+    for x in ax2_x_ticks[1:-1]:
+        l, = ax2.plot([x,x], [lower_y, upper_y], linestyle="--", lw=0.5,
+            color='k', alpha=0.3)
+        ax2_background.append(l)
+
     # init barplots
-    weight_bars = ax1.barh(bar_pos, [0]*n_pop, bar_height,
-        color=TABLEAU20[5], edgecolor = "none")
+    weight_bars = ax1.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[5],
+        edgecolor="none")
+    mut_bars = ax2.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[5],
+        edgecolor="none")
     weight_std_lines = []
+    mut_std_lines = []
     for wlp in weight_line_pos:
         line, = ax1.plot([0, 0], [wlp, wlp], color='k', lw=1, marker='|',
             linestyle=':', markersize=8)
         weight_std_lines.append(line)
-    t_freq_bars = ax2.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[0],
+        line, = ax2.plot([0, 0], [wlp, wlp], color='k', lw=1, marker='|',
+            linestyle=':', markersize=8)
+        mut_std_lines.append(line)
+    t_freq_bars = ax3.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[0],
         edgecolor = "none")
-    c_freq_bars = ax2.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[1],
+    c_freq_bars = ax3.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[1],
         edgecolor = "none")
-    g_freq_bars = ax2.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[2],
+    g_freq_bars = ax3.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[2],
         edgecolor = "none")
-    a_freq_bars = ax2.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[3],
+    a_freq_bars = ax3.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[3],
         edgecolor = "none")
     
     # init populations
-    pop_weights = []
+    pop_weights, desc_muts = [], []
     for j, pn in enumerate(args.pop_names):
         pop_weights.append(collections.deque([], 1000))
+        desc_muts.append(collections.deque([], 1000))
 
         print("Generating population: %s" % pn)
         print("    Pop size:    %s" % args.pop_size[j])
@@ -372,29 +412,37 @@ def run_animation(args):
         for iCurr in range(iStart, iStart+args.iterations):
             switch = env.trySwitch()
             iSwitch = 0 if switch else iSwitch + 1
-            for j, pop in enumerate(populations):
-                pop.moran_step()
+            average_weight, base_freqs, n_mut = [], [], []
+            for pop in populations:
+                step_info_dict = pop.moran_step()
+                average_weight.append(step_info_dict["average_weight"])
+                base_freqs.append(step_info_dict["base_freqs"])
+                n_mut.append(step_info_dict["n_mut"])
+                if args.record:
+                    write_info_dict(step_info_dict, POP_FILE_DICT[pop.popId])
             iCurr += 1
-            yield (iCurr,
-                   [pop.get_average_weight() for pop in populations],
-                   [pop.get_base_freqs() for pop in populations],
-                   iSwitch)
+            yield (iCurr, average_weight, base_freqs, n_mut, iSwitch)
 
-    ## TODO: add init_func for FuncAnimation
+    #TODO: add init_func for FuncAnimation
 
     def run(data):
         # update the data
-        iteration, weights, freqs, iSwitch = data
-        for i, pw in enumerate(weights):
+        iteration, weights, freqs, n_mut, iSwitch = data
+        for i, (pw, nm) in enumerate(zip(weights, n_mut)):
             pop_weights[i].append(pw)
+            desc_muts[i].append(nm)
+            weight_bars[i].set_width(pw)
+            # mut_bars[i].set_width(nm)
+            mut_bars[i].set_width(numpy.mean(desc_muts[i]))
 
-        for wb, w in zip(weight_bars, weights):
-            wb.set_width(w)
-
-        for i, (y, line) in enumerate(zip(weight_line_pos, weight_std_lines)):
+        for i, (y, wl, ml) in enumerate(zip(weight_line_pos, weight_std_lines,
+            mut_std_lines)):
             min_w = min(pop_weights[i])
             max_w = max(pop_weights[i])
-            line.set_data([min_w, max_w], [y, y])
+            wl.set_data([min_w, max_w], [y, y])
+            min_m = min(desc_muts[i])
+            max_m = max(desc_muts[i])
+            ml.set_data([min_m, max_m], [y, y])
 
         a_freqs = numpy.array([fq['A'] for fq in freqs])
         g_freqs = numpy.array([fq['G'] for fq in freqs]) + a_freqs
@@ -420,14 +468,16 @@ def run_animation(args):
         iter_label.set_text("%s" % iteration)
         switch_label.set_text("%s" % iSwitch)
 
-        to_redraw_list = itertools.chain(ax1_background, counter_labels,
-            weight_bars, weight_std_lines, t_freq_bars, c_freq_bars,
-            g_freq_bars, a_freq_bars, gi_labels)
+        to_redraw_list = itertools.chain(ax1_background, ax2_background,
+            counter_labels, weight_bars, mut_bars, weight_std_lines,
+            mut_std_lines, t_freq_bars, c_freq_bars, g_freq_bars, a_freq_bars,
+            gi_labels)
         return to_redraw_list
 
 
     ani = animation.FuncAnimation(fig, run, data_gen, blit=True, interval=10,
         repeat=False)
+    plt.tight_layout()
     plt.show()
 
     
@@ -554,47 +604,46 @@ def main():
                         type=int,
                         default=10000)
 
+    parser.add_argument("--record",
+                        action="store_true")
+
     args = parser.parse_args()
     check_arg_len_consistency(args)
     fit_pos_base_weights_to_gen_len(args)
 
+    if args.record:
+        # if record is required, check whether all necessary files are given
+        assert set(POP_FILE_DICT.keys()) >= set(args.pop_names)
+        for k, v in POP_FILE_DICT.items():
+            POP_FILE_DICT[k] = open(v, 'w')
+        
     run_animation(args)
+
+    if args.record:
+        for f in POP_FILE_DICT.values():
+            f.close()
 
 
 
 if __name__ == "__main__":
-# figure3:  python evol.py -pn asexual sexual -gl 100 -mp 0.05 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 1 -rr 0 0.1 -hs 0 1 -ss 0 -sss 0 0 -sbs 55000 -i 50000
+# figure3:  python evol.py -pn asex sex -gl 100 -mp 0.0152 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 1 -rr 0 0.1 -hs 0 1 -ss 0 -sss 0 0 -sbs 55000 -i 50000
+# figure3v2: python evol.py -pn asexlow asexhigh sex -gl 100 -mp 0.0152 0.05 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 0 1 -rr 0 0 0.1 -hs 0 0 1 -ss 0 -sss 0 -sbs 55000 -i 50000
 # figure2:  python evol.py -pn asex005 asex01 sex005 sex01 -ps 100 -gl 100 -mp 0.05 0.1 0.05 0.1 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 0 1 1 -rr 0 0 0.1 0.1 -hs 0 0 1 1 -ss 0 -sss 0 -sbs 55000 -i 50000
+# figure2v2: repeat experiment according to the figure
 # figure1s: python evol.py -pn asex2 asex3 sex2 sex3 -gl 100 -mp 0.05 -bl 0 -cn 2 3 2 3 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 0 1 1 -rr 0 0 0.1 0.1 -hs 0 0 1 1 -ss 0 -sss 0 -sbs 55000 -i 50000
-# figure2s: python evol.py -pn asex100 asex200 asex400 asex800 -gl 100 200 400 800 -mp 0.02 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 -rr 0 -hs 0 -ss 0 -sss 0 -sbs 55000 -i 50000
+# figure2sA: python evol.py -pn asex100 asex200 asex400 asex800 -gl 100 200 400 800 -mp 0.02 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 -rr 0 -hs 0 -ss 0 -sss 0 -sbs 55000 -i 50000
+# figure2sS: python evol.py -pn sex100 sex200 sex400 sex800 -gl 100 200 400 800 -mp 0.02 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 1 -rr 0.1 -hs 1 -ss 0 -sss 0 -sbs 55000 -i 50000
 # figure3s: python evol.py -pn asex sex sexsel -gl 100 -mp 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0 1 1 -rr 0 0.1 0.1 -hs 0 1 1 -ss 0 -sss 0 0 0.5 -sbs 55000 -i 50000
 # figure4s: python evol.py -pn sex002 sex005 sex01 sex05 sex1 -gl 100 -mp 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 1 -rr 0.02 0.05 0.1 0.5 1.0 -hs 1 -ss 0 -sss 0 -sbs 55000 -i 50000
 # figure5s: python evol.py -pn sex005 sex01 sex02 sex05 sex1 -gl 100 -mp 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0.05 0.1 0.2 0.5 1 -rr 0.1 -hs 1 -ss 0 -sss 0 -sbs 55000 -i 50000
-    RECORD = True
-
-    if RECORD:
-        ASEX005_WEIGHTS_FILE = open("data/asex005_fig2_weights.txt", 'w')
-        ASEX01_WEIGHTS_FILE = open("data/asex01_fig2_weights.txt", 'w')
-        SEX005_WEIGHTS_FILE = open("data/sex005_fig2_weights.txt", 'w')
-        SEX01_WEIGHTS_FILE = open("data/sex01_fig2_weights.txt", 'w')
-
-        ASEX005_BASE_FREQ_FILE = open("data/asex005_fig2_base_freq.txt", 'w')
-        ASEX01_BASE_FREQ_FILE = open("data/asex01_fig2_base_freq.txt", 'w')
-        SEX005_BASE_FREQ_FILE = open("data/sex005_fig2_base_freq.txt", 'w')
-        SEX01_BASE_FREQ_FILE = open("data/sex01_fig2_base_freq.txt", 'w')
+    
+    # keys should correspond to population ids
+    POP_FILE_DICT = {"asexlow":"data/fig3_asexlow_stats.txt",
+                     "asexhigh":"data/fig3_asexhigh_stats.txt",
+                     "sex":"data/fig3_sex_stats.txt"}
 
     main()
 
-    if RECORD:
-        ASEX005_WEIGHTS_FILE.close()
-        ASEX01_WEIGHTS_FILE.close()
-        SEX005_WEIGHTS_FILE.close()
-        SEX01_WEIGHTS_FILE.close()
-
-        ASEX005_BASE_FREQ_FILE.close()
-        ASEX01_BASE_FREQ_FILE.close()
-        SEX005_BASE_FREQ_FILE.close()
-        SEX01_BASE_FREQ_FILE.close()
 
 '''
 Launch example:
