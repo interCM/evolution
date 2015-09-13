@@ -62,7 +62,7 @@ def write_info_dict(info_dict, f):
 
 
 class Organism(object):
-    def __init__(self, genome, sex):
+    def __init__(self, genome, sex, genome_origin=None):
         self.genome = genome
         self.sex = sex
         self.age = 0
@@ -70,7 +70,9 @@ class Organism(object):
         self.youngestChildAge = 1000000
         self.nChildren = 0
         self.nMut = 0
-    
+        self.genome_origin = ( genome[:] if genome_origin is None
+            else genome_origin )
+
     def set_weight(self, posBaseWeights):
         self.weight = sum(posBaseWeights[b][i]
                 for i,b in enumerate(self.genome))
@@ -87,8 +89,11 @@ class Organism(object):
 
     def recombine(self, org, recRate):
         parInd = parentIndexGenerator(recRate)
-        self.genome = [ bb[next(parInd)]
-            for bb in zip(self.genome, org.genome) ]
+        ind = [next(parInd) for i in xrange(len(self.genome))]
+        tmp_zip = zip(self.genome, org.genome)
+        self.genome = [tmp_zip[i] for i in ind]
+        tmp_zip = zip(self.genome_origin, org.genome_origin)
+        self.genome_origin = [tmp_zip[i] for i in ind]
 
     # Returns:
     # child - new Organism instance
@@ -98,7 +103,7 @@ class Organism(object):
         recRate=0, secondParentOrg=None):
         self.youngestChildAge = 0
         self.nChildren += 1
-        child = Organism(self.genome[:], sex)
+        child = Organism(self.genome[:], sex, self.genome_origin[:])
         if not secondParentOrg is None:
             child.recombine(secondParentOrg, recRate)
             secondParentOrg.nChildren += 1
@@ -108,6 +113,12 @@ class Organism(object):
         child.set_weight(posBaseWeights)
         info_dict["after_mut_weight"].append(child.weight)
         return child
+
+    # Returns:
+    # number of mutations compared to origin
+    def compare_to_origin(self):
+        return sum(( 1 for g, o in zip(self.genome, self.genome_origin)
+            if g != o ))
 
 
 class Population(object):
@@ -195,6 +206,8 @@ class Population(object):
         step_info_dict["average_weight"] = self.get_average_weight()
         step_info_dict["n_mut"] = descendant.nMut
         step_info_dict["base_freqs"] = self.get_base_freqs()
+        step_info_dict["av_n_mut_origin"] = \
+            self.get_av_mut_n_compared_to_origin()
 
         self.organisms.pop(dieInd)
         descendant_ind = bisect.bisect([org.weight for org in self.organisms],
@@ -216,6 +229,13 @@ class Population(object):
         for org in self.organisms:
             org.set_weight(self.posBaseWeights)
         self.organisms.sort(key=lambda org: org.weight)
+        
+    def get_av_mut_n_compared_to_origin(self):
+        return sum(o.compare_to_origin() for o in self.organisms)/self.size
+        
+    def update_origin_genomes(self):
+        for o in self.organisms:
+            o.genome_origin = o.genome[:]
 
 
 class Environment(object):
@@ -278,9 +298,8 @@ def run_animation(args):
 
     ax2.set_yticks([bp + bar_height/2 for bp in bar_pos])
     ax2.set_yticklabels(args.pop_names, fontsize=14)
-    ax2.set_xlabel("Mutations in descendant", fontsize=14)
-    max_average_mut = max(g*m for g, m in zip(args.genome_len, args.mut_prob))
-    upper_mut_x_lim = max(4*int(max_average_mut), 4)
+    ax2.set_xlabel("N mutations compared to origin", fontsize=14)
+    upper_mut_x_lim = max(args.genome_len)
     ax2.set_xlim((0, upper_mut_x_lim))
     ax2.set_ylim((lower_y, upper_y))
 
@@ -299,12 +318,15 @@ def run_animation(args):
     ax2.add_patch(white_rect)
     ax2_background = [white_rect]
 
-    # add gi and iteration number labels
+    # add gi, iteration and generations since last origin update labels
     iter_label = ax1.text(.015, 0.95, "0", fontsize=12,
         bbox=dict(facecolor='white', edgecolor = "none"))
     switch_label = ax1.text(.015, 0.9, "0", fontsize=12, color=TABLEAU20[6],
         bbox=dict(facecolor="white", edgecolor = "none"))
-    counter_labels = [iter_label, switch_label]
+    gen_since_last_origin_update_label = ax2.text(upper_mut_x_lim//20, 0.95, "0",
+        fontsize=12, bbox=dict(facecolor='white', edgecolor = "none"))
+    counter_labels = [iter_label, switch_label,
+        gen_since_last_origin_update_label]
     gi_labels = []
     for i in range(n_pop):
         gi_text = ax.text(.01, bar_pos[i] + .035, "0", fontsize=12)
@@ -317,9 +339,9 @@ def run_animation(args):
     ax3.set_xticks(x_ticks)
     ax3.set_xticklabels(list(map(str, x_ticks)))
 
-    ax2_x_ticks = numpy.arange(upper_mut_x_lim+1)
+    ax2_x_ticks = numpy.arange(0, upper_mut_x_lim+1, 5)
     ax2.set_xticks(ax2_x_ticks)
-    ax2_tick_labels = [str(t) if i%4==0 else ""
+    ax2_tick_labels = [str(t) if i%2==0 else ""
         for i, t in enumerate(ax2_x_ticks)]
     ax2.set_xticklabels(ax2_tick_labels)
     # ax2.set_xticklabels(list(map(str, ax2_x_ticks)))
@@ -359,12 +381,16 @@ def run_animation(args):
         edgecolor = "none")
     a_freq_bars = ax3.barh(bar_pos, [0]*n_pop, bar_height, color=TABLEAU20[3],
         edgecolor = "none")
+        
+    # common parameters for all populations:
+    print("Update origin genomes: %s" %
+        ", ".join(map(str, args.update_origin_generations)))
     
     # init populations
-    pop_weights, desc_muts = [], []
+    pop_weights, compared_to_origin_muts = [], []
     for j, pn in enumerate(args.pop_names):
         pop_weights.append(collections.deque([], 1000))
-        desc_muts.append(collections.deque([], 1000))
+        compared_to_origin_muts.append(collections.deque([], 1000))
 
         print("Generating population: %s" % pn)
         print("    Pop size:    %s" % args.pop_size[j])
@@ -409,39 +435,48 @@ def run_animation(args):
     def data_gen():
         iStart = 0
         iSwitch = 0
+        iSinceLastOriginUpdate = 0
         for iCurr in range(iStart, iStart+args.iterations):
+            update_origin_genomes = iCurr in args.update_origin_generations
+            if update_origin_genomes:
+                iSinceLastOriginUpdate = 0
+            else:
+                iSinceLastOriginUpdate += 1
             switch = env.trySwitch()
             iSwitch = 0 if switch else iSwitch + 1
-            average_weight, base_freqs, n_mut = [], [], []
-            for pop in populations:
+            average_weight, base_freqs, av_n_mut_origin = [], [], []
+            for i, pop in enumerate(populations):
+                if update_origin_genomes:
+                    pop.update_origin_genomes()
+                    compared_to_origin_muts[i].clear()
                 step_info_dict = pop.moran_step()
                 average_weight.append(step_info_dict["average_weight"])
                 base_freqs.append(step_info_dict["base_freqs"])
-                n_mut.append(step_info_dict["n_mut"])
+                av_n_mut_origin.append(step_info_dict["av_n_mut_origin"])
                 if args.record:
                     write_info_dict(step_info_dict, POP_FILE_DICT[pop.popId])
-            iCurr += 1
-            yield (iCurr, average_weight, base_freqs, n_mut, iSwitch)
+            yield (iCurr+1, average_weight, base_freqs, av_n_mut_origin,
+                iSinceLastOriginUpdate, iSwitch)
 
     #TODO: add init_func for FuncAnimation
 
     def run(data):
         # update the data
-        iteration, weights, freqs, n_mut, iSwitch = data
-        for i, (pw, nm) in enumerate(zip(weights, n_mut)):
+        iteration, weights, freqs, av_n_mut_origin, iOrUpdate, iSwitch = data
+        for i, (pw, nm) in enumerate(zip(weights, av_n_mut_origin)):
             pop_weights[i].append(pw)
-            desc_muts[i].append(nm)
+            compared_to_origin_muts[i].append(nm)
             weight_bars[i].set_width(pw)
             # mut_bars[i].set_width(nm)
-            mut_bars[i].set_width(numpy.mean(desc_muts[i]))
+            mut_bars[i].set_width(numpy.mean(compared_to_origin_muts[i]))
 
         for i, (y, wl, ml) in enumerate(zip(weight_line_pos, weight_std_lines,
             mut_std_lines)):
             min_w = min(pop_weights[i])
             max_w = max(pop_weights[i])
             wl.set_data([min_w, max_w], [y, y])
-            min_m = min(desc_muts[i])
-            max_m = max(desc_muts[i])
+            min_m = min(compared_to_origin_muts[i])
+            max_m = max(compared_to_origin_muts[i])
             ml.set_data([min_m, max_m], [y, y])
 
         a_freqs = numpy.array([fq['A'] for fq in freqs])
@@ -467,6 +502,7 @@ def run_animation(args):
 
         iter_label.set_text("%s" % iteration)
         switch_label.set_text("%s" % iSwitch)
+        gen_since_last_origin_update_label.set_text("%s" % iOrUpdate)
 
         to_redraw_list = itertools.chain(ax1_background, ax2_background,
             counter_labels, weight_bars, mut_bars, weight_std_lines,
@@ -596,6 +632,10 @@ def main():
     parser.add_argument("-sss", "--sex-sel-strength",
                         nargs='*',
                         type=float,
+                        default=[0])
+    parser.add_argument("-uog", "--update-origin-generations",
+                        nargs='*',
+                        type=int,
                         default=[0])
     parser.add_argument("-sbs", "--steps-between-switches",
                         type=int,
