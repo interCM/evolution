@@ -74,8 +74,12 @@ class Organism(object):
             else genome_origin )
 
     def set_weight(self, posBaseWeights):
-        self.weight = sum(posBaseWeights[b][i]
-                for i,b in enumerate(self.genome))
+        try:
+            self.weight = sum(posBaseWeights[b][i]
+                    for i,b in enumerate(self.genome))
+        except KeyError:
+            print(self.genome)
+            raise
 
     # Modifies genome sequence with respect to the given probabilities of
     # mutation and transition.
@@ -91,9 +95,9 @@ class Organism(object):
         parInd = parentIndexGenerator(recRate)
         ind = [next(parInd) for i in xrange(len(self.genome))]
         tmp_zip = zip(self.genome, org.genome)
-        self.genome = [tmp_zip[i] for i in ind]
+        self.genome = [parent_b[i] for i, parent_b in zip(ind,tmp_zip)]
         tmp_zip = zip(self.genome_origin, org.genome_origin)
-        self.genome_origin = [tmp_zip[i] for i in ind]
+        self.genome_origin = [parent_b[i] for i, parent_b in zip(ind,tmp_zip)]
 
     # Returns:
     # child - new Organism instance
@@ -339,7 +343,8 @@ def run_animation(args):
     ax3.set_xticks(x_ticks)
     ax3.set_xticklabels(list(map(str, x_ticks)))
 
-    ax2_x_ticks = numpy.arange(0, upper_mut_x_lim+1, 5)
+    ax2_x_ticks = numpy.arange( 0, upper_mut_x_lim+1,
+        int(0.05*upper_mut_x_lim) )
     ax2.set_xticks(ax2_x_ticks)
     ax2_tick_labels = [str(t) if i%2==0 else ""
         for i, t in enumerate(ax2_x_ticks)]
@@ -678,9 +683,8 @@ if __name__ == "__main__":
 # figure5s: python evol.py -pn sex005 sex01 sex02 sex05 sex1 -gl 100 -mp 0.05 -bl 0 -cn 4 -pbw A:[0.65]_G:[0.25]_C:[0.1]_T:[0.0] -rf 0.05 0.1 0.2 0.5 1 -rr 0.1 -hs 1 -ss 0 -sss 0 -sbs 55000 -i 50000
     
     # keys should correspond to population ids
-    POP_FILE_DICT = {"asexlow":"data/fig3_asexlow_stats.txt",
-                     "asexhigh":"data/fig3_asexhigh_stats.txt",
-                     "sex":"data/fig3_sex_stats.txt"}
+    POP_FILE_DICT = {"asex":"data/test_asex_stats.txt",
+                     "sex":"data/test_sex_stats.txt"}
 
     main()
 
