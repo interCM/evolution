@@ -1,0 +1,81 @@
+Evolution package includes files:
+evolution.py - main script performing simulation of the evolution
+monitor.py - auxiliary module responsible for logging
+config.cfg - template configuration file
+produceplots.py - a module for visualization of the simulation results
+
+Package is written for python 3 and will not work with python 2.
+Testing was done with python 3.4 and 3.5.
+
+
+Next sections describe how to
+> configure
+> and start
+an evolution experiment
+> and visualize
+its outcome.
+
+Configuration.
+The first thing you need to do after you came up with the idea of the
+experiment is setting up of a corresponding configuration file. For this
+purpose you can either edit an existing config.cfg file which is a part of the
+package or create a new configuration file using config.cfg as a template.
+All simulation related parameters should be included into configuration file.
+The structure and syntax of configuration file should conform with the
+specification of the python's configparser module.
+Sections and parameters in the configuration file (see config.cfg):
+[DEFAULT]
+- This section is optional. If some required parameter from one of the next
+  sections is absent the program will try to take this parameter from the
+  DEFAULT section. If the program fails to find a required parameter in the
+  configuration file it will be terminated with error.
+[common]
+interations   - required (integer)
+run_id        - required (string)
+runs_base_dir - required (string, a directory runs_base_dir will be created if
+                          absent)
+[environment]
+primary_pos_base_weights        - required (see format in config.cfg)
+update_origin_at_iter           - optional (space delimited list of integers)
+pos_base_weights_switch_at_iter - optional (space delimited list of integers)
+alternative_pos_base_weights    - optional (same as primary_pos_base_weights)
+[population_1]
+name                 - required (string, unique for each population)
+pop_size             - required (integer)
+genome_len           - required (integer)
+mut_prob             - required (0 <= float <= 1)
+ti_prob              - required (0 <= float <= 1)
+sel_strength         - required (0 <= float <= 1)
+children_number      - required (integer)
+rec_freq             - required (0 <= float <= 1)
+rec_rate             - required (0 <= float <= 1)
+partner_sel_strength - required (0 <= float <= 1)
+has_sex              - required (boolean)
+male_number          - required if has_sex is True otherwise will be ignored
+                                (integer)
+
+Theoretically nothing prevents you from running 100 different populations
+simultaneously. However, it is not recommended to start simulations with more
+than 5 different populations.
+
+
+Starting simulation.
+When configuration file is constructed you can start simulation with:
+$python3 evolution.py config.cfg
+If everything goes fine [runs_base_dir]/[run_id] folder will be created. This
+folder will contain a file with starting configuration (start.cfg) and
+run_log.txt file, where data produced by the simulation will be saved. These
+data contains normalized average weight, GI and number of mutations compared
+to origin genome as well as weight after mutation, recombination and selection
+for all offsprings generated during the iteration for each population at each
+iteration.
+Simulation progress will be shown in the command line.
+
+
+Visualization of the results.
+When simulation run is finished the data from the corresponding run_log.txt
+file can be easily visualized with:
+$python3 produceplots.py [runs_base_dir]/[run_id]
+This will show you a figure representing the change of population parameters
+in the course of the evolution. This figure will be also automatically saved
+to the corresponding run directory ([runs_base_dir]/[run_id]).
