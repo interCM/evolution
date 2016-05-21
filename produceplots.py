@@ -1,5 +1,5 @@
 import sys
-assert sys.version_info[:2] >= (3, 4), "Use python version >= 3.4"
+assert sys.version_info[:2] == (3, 5), "Use python 3.5"
 import os, configparser
 import pandas as pd
 import numpy as np
@@ -112,7 +112,6 @@ if __name__ == "__main__":
         axes[3].fill(sel_x, sel_y, color=color, alpha=0.1, label=p)
     axes[3].set_xlabel("Normalized weight")
     axes[3].set_ylabel("Abundance")
-
 
     for ax in axes:
         ax.legend(loc="best", fontsize=10)

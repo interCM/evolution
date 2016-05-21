@@ -5,12 +5,12 @@ config.cfg - template configuration file
 produceplots.py - a module for visualization of the simulation results
 
 Package is written for python 3 and will not work with python 2.
-Testing was done with python 3.4 and 3.5.
+Testing was done with python 3.5.
 
 
 Next sections describe how to
 > configure
-> and start
+> start
 an evolution experiment
 > and visualize
 its outcome.

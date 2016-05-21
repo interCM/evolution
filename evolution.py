@@ -1,5 +1,5 @@
 import sys
-assert sys.version_info[:2] >= (3, 4), "Use python version >= 3.4"
+assert sys.version_info[:2] == (3, 5), "Use python version 3.5"
 import os, random, bisect, math, ast, configparser, shutil, itertools
 from collections import Counter
 from operator import attrgetter
@@ -7,23 +7,49 @@ import numpy as np
 import monitor
 
 
-BASES = "AGCT"
+BASES = "AGCT" # nucleotides
 TR = {'A':'G','G':'A','C':'T','T':'C'}
 TV = {'A':'CT','G':'CT','C':'AG','T':'AG'}
 
 def get_gi(freqs):
-    gi = 2
+    """ Calculate GI for given nucleotide frequencies.
+    Args:
+    freqs = [fA, fG, fC, fT] - list of nucleotide frequencies, sum(freqs)=1
+    Return:
+    GI = -(fA*log2(fA) + fG*log2(fG) + fC*log2(fC) + fT*log2(fT))
+    """
+    gi = 2.
     for fr in freqs:
         if fr > 0:
             gi += fr*math.log2(fr)
     return gi
 
 def generate_random_genome(L):
+    """ Create random list of nucleotides (genome).
+    Args:
+    L - length og genome
+    Return:
+    Random nucleotide list of length L
+    """
     return [random.choice(BASES) for _ in range(L)]
 
 
 class AsexualOrganism(object):
     def __init__(self, genome, pbw, weight=None, origin=None, age=0):
+        """ Represents an organism without sex. Depending on population
+        parameters such organisms can reproduce without partner or mate with
+        any other organism in the population regardless of its sex.
+        Args:
+        genome - list of nucleotides
+        pbw    - positional base weights. List of dictionaries, each dict
+                 contains nucleotide weights for a corresponding position.
+                 If len(pbw) < len(genome), then pbw will be repeated several
+                 times until it covers all positions in the genome.
+        weight - weight of the organism (float or None). If None, it will be
+                 calculated according to the given pbw.
+        origin - genome used as an origin reference for this organism
+        age    - age of the organism (int)
+        """
         self.genome = genome
         cpbw = itertools.cycle(pbw)
         self.pbw = [next(cpbw) for _ in range(len(self.genome))]
@@ -32,26 +58,53 @@ class AsexualOrganism(object):
         self.age = age
 
     def set_weight(self, weight=None):
+        """ Set organism's weight.
+        Args:
+        weight - weight of the organism (float or None). If None, it will be
+                 calculated according to the self.pbw
+        """
         self.weight = ( sum(self.pbw[i][b] for i, b in enumerate(self.genome))
             if weight is None else weight )
 
     def set_origin(self, origin=None):
+        """ Set origin genome for the organism.
+        Args:
+        origin - list of nucleotide or None. If None, current organism's
+                 genome wil be set as origin
+        """
         self.origin = self.genome[:] if origin is None else origin
 
     def get_weight_per_position(self):
+        """ Calculate organism's average positional weight.
+        Return:
+        average weight per positinon (float)
+        """
         return self.weight/len(self.genome)
 
     def compare_to_origin(self):
+        """ Calculate organism's average number of mutations per positinon as
+        compared to origin genome.
+        Return:
+        average number of mutations per positinon (float)
+        """
         n_mut = sum((1 for g, o in zip(self.genome, self.origin) if g != o))
         return n_mut/len(self.genome)
 
     def update_pbw(self, new_pbw):
+        """ Change organism's positional base weights.
+        """
         cpbw = itertools.cycle(new_pbw)
         pbw = [next(cpbw) for _ in range(len(self.genome))]
         self.pbw = pbw
         self.set_weight()
 
     def mutate(self, mP, tiP):
+        """ Introduce mutations to the organism's genome.
+        Args:
+        mP  - probability of mutation per positinon (float <= 1)
+        tiP - probability thet occured mutation will be a transition
+              (0 <= float <= 1)
+        """
         mut_pos = np.flatnonzero(np.random.rand(len(self.genome)) < mP)
         ti_p = np.random.rand(len(mut_pos))
         for i, p in enumerate(mut_pos):
@@ -61,6 +114,11 @@ class AsexualOrganism(object):
             self.weight += self.pbw[i][nb] - self.pbw[i][b]
 
     def recombine(self, other, rr):
+        """ Recombine organism's genome with genome of another organism.
+        Args:
+        other - another organism
+        rr    - probability of crossover event per base (0 <= float <= 1)
+        """
         rec_pos = list(np.flatnonzero(np.random.rand(len(self.genome)) < rr))
         rec_pos.append(len(self.genome))
         rec_pos.insert(0, 0)
@@ -75,10 +133,28 @@ class AsexualOrganism(object):
 
     @classmethod
     def generate_random(cls, genome_len, pbw):
+        """ Generate a random organism with a given lenrth of genome and
+        positional base weights.
+        Args:
+        genome_len - length of genome (int)
+        pbw        - positional base weights (list of dicts)
+        Return:
+        AsexualOrganism
+        """
         genome = generate_random_genome(genome_len)
         return cls(genome, pbw)
 
     def get_child(self, mP, tiP, parent2, rr):
+        """ Produce a descendant.
+        Args:
+        mP      - probability of mutation per positinon (float <= 1)
+        tiP     - probability thet occured mutation will be a transition
+                  (0 <= float <= 1)
+        parent2 - mating partner (organism or None)
+        rr      - probability of crossover event per base (0 <= float <= 1)
+        Return:
+        descendant AsexualOrganism
+        """
         child = AsexualOrganism( self.genome[:], self.pbw, self.weight,
             self.origin[:] )
         if not parent2 is None:
@@ -91,15 +167,35 @@ class AsexualOrganism(object):
 
 class SexualOrganism(AsexualOrganism):
     def __init__(self, genome, pbw, sex, weight=None, origin=None, age=0):
+        """ Represents an organism with sex. Depending on population
+        parameters such organisms can reproduce without partner or mate with
+        other organism in the population having different sex.
+        Args:
+        same as in AsexualOrganism
+        sex - sex of the organism (str, 'M' or 'F')
+        """
         super().__init__(genome, pbw, weight, origin, age)
         self.sex = sex
 
     @classmethod
     def generate_random(cls, genome_len, pbw, sex):
+        """ Generate a random organism with a given lenrth of genome,
+        positional base weights and sex.
+        Args:
+        same as in AsexualOrganism.generate_random + sex
+        Return:
+        SexualOrganism
+        """
         genome = generate_random_genome(genome_len)
         return cls(genome, pbw, sex)
 
     def get_child(self, sex, mP, tiP, parent2, rr):
+        """ Produce a descendant.
+        Args:
+        same as in AsexualOrganism.get_child + sex
+        Return:
+        descendant SexualOrganism
+        """
         child = SexualOrganism( self.genome[:], self.pbw, sex, self.weight,
             self.origin[:] )
         if not parent2 is None:
@@ -111,9 +207,32 @@ class SexualOrganism(AsexualOrganism):
 
 
 class AsexualPopulation(object):
-    def __init__( self, organisms, mut_prob, ti_prob, sel_strength,
-        children_number, rec_freq, rec_rate, partner_sel_strength,
-        eliminate_oldest=False ):
+    def __init__(self, organisms, mut_prob, ti_prob, sel_strength,
+            children_number, rec_freq, rec_rate, partner_sel_strength,
+            eliminate_oldest=False):
+        """ Represents a population os AsexualOrganisms.
+        Args:
+        organisms - list of AsexualOrganisms
+        mut_prob  - probability of mutation per positinon (0 <= float <= 1) 
+        ti_prob   - probability thet occured mutation will be a transition
+                    (float <= 1)
+        sel_strength    - selection strength, determines which fraction of
+                          the populaiton is considered for reproduction at
+                          each reproduction round (0 <= float <= 1)
+        children_number - number of descendants generated per replication
+                          round. Only a descendant with highest weight is
+                          kept in the population, others are ignored (int)
+        rec_freq  - probability of recombination event per round of
+                    replication (float <= 1)
+        rec_rate  - probability of crossover event per base (0 <= float <= 1)
+        partner_sel_strength - determines which fraction of the populaiton is
+                               considered when mating partner is selected
+                               (0 <= float <= 1)
+        eliminate_oldest     - boolean flag. If true an oldest organism is
+                               eliminated from the population after each
+                               reproduction round, otherwise random organism
+                               is eliminated
+        """
         self.organisms = organisms
         self.organisms.sort(key=lambda o: o.weight)
         self.mP = mut_prob
@@ -154,14 +273,6 @@ class AsexualPopulation(object):
             freqs = [n/org_n for n in b_count.values()]
             gi += get_gi(freqs)
         return gi/len(self.pos_base_count)
-        '''
-        # old style GI calculation for populations with identical nucleotide
-        # weights in all positions
-        freq_counter = Counter(
-            itertools.chain.from_iterable(o.genome for o in self.organisms) )
-        totalSum = len(self.organisms)*len(self.organisms[0].genome)
-        return get_gi([count/totalSum for b, count in freq_counter.items()])
-        '''
 
     def get_average_mut_prob_compared_to_origin(self):
         size = len(self.organisms)
@@ -169,7 +280,7 @@ class AsexualPopulation(object):
 
     def get_org_to_die_ind(self):
         if self.eliminate_oldest:
-            # org with maximum weight will be eliminated from the population
+            # org with maximum age will be eliminated from the population
             die_ind, _ = max( enumerate(self.organisms),
                 key=lambda ind_org: ind_org[1].age )
         else:
@@ -193,15 +304,17 @@ class AsexualPopulation(object):
         return offspring
 
     @classmethod
-    def generate_random( cls, pop_size, mut_prob, ti_prob, sel_strength,
-        children_number, rec_freq, rec_rate, partner_sel_strength, genome_len,
-        pbw ):
+    def generate_random(cls, pop_size, mut_prob, ti_prob, sel_strength,
+            children_number, rec_freq, rec_rate, partner_sel_strength,
+            genome_len, pbw):
         organisms = [ AsexualOrganism.generate_random(genome_len, pbw)
             for _ in range(pop_size) ]
         return cls( organisms, mut_prob, ti_prob, sel_strength,
             children_number, rec_freq, rec_rate, partner_sel_strength )
 
     def moran_step(self):
+        """ Moran reproduction round.
+        """
         for o in self.organisms:
             o.age += 1
         die_ind = self.get_org_to_die_ind()
