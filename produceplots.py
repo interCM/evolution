@@ -38,7 +38,10 @@ def get_steady_sate_ind(average_weights):
 
 
 if __name__ == "__main__":
-    assert len(sys.argv) == 2, "Run with: $python produceplots.py run_dir"
+    """ This module is used to create a figure based on the data recorded
+    by the Monitor during the evolution.
+    """
+    assert len(sys.argv) == 2, "Run: $python produceplots.py path/to/run_id"
     run_dir = sys.argv[1]
     assert os.path.isdir(run_dir), "Cannot find run dir"
     run_log_file = os.path.join(run_dir, "run_log.txt")

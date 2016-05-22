@@ -57,6 +57,8 @@ male_number          - required if has_sex is True otherwise will be ignored
 Theoretically nothing prevents you from running 100 different populations
 simultaneously. However, it is not recommended to start simulations with more
 than 5 different populations.
+Detailed description of all simulation related parameters can be found in the
+evolution.py file.
 
 
 Starting simulation.
