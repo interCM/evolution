@@ -60,7 +60,7 @@ if __name__ == "__main__":
     assert set(df["pop"]) == set(pop_names)
     pop_steady_state_ind = {}
 
-    fig, axes = plt.subplots(4, figsize=(8,16))
+    fig, axes = plt.subplots(4, figsize=(6,9))
 
     ss_indixes = []
     for p, color in zip(pop_names, COLORS[:len(pop_names)]):
@@ -73,18 +73,24 @@ if __name__ == "__main__":
     for ss, color in zip(ss_indixes, COLORS[:len(pop_names)]):
         axes[0].plot( [ss, ss], y_lim, color=color, ls='--' )
     axes[0].set_ylim(y_lim)
-    axes[0].set_ylabel("Average weight")
-
+    axes[0].set_ylabel("Average weight", fontsize=10)
+    axes[0].tick_params(axis='x', labelsize=8)
+    axes[0].tick_params(axis='y', labelsize=8)
+    
     for p, color in zip(pop_names, COLORS[:len(pop_names)]):
         y = df.loc[(df["pop"]==p) & (df["par"]=="AV_GI"), "val"].values
         axes[1].plot(range(len(y)), y, color=color, label=p)
-    axes[1].set_ylabel("Average GI (bits)")
+    axes[1].set_ylabel("Average GI (bits)", fontsize=10)
+    axes[1].tick_params(axis='x', labelsize=8)
+    axes[1].tick_params(axis='y', labelsize=8)
 
     for p, color in zip(pop_names, COLORS[:len(pop_names)]):
         y = df.loc[(df["pop"]==p) & (df["par"]=="AV_MUT"), "val"].values
         axes[2].plot(range(len(y)), y, color=color, label=p)
-    axes[2].set_xlabel("Iteration")
-    axes[2].set_ylabel("Average fraction of mutated genome")
+    axes[2].set_xlabel("Iteration", fontsize=10)
+    axes[2].set_ylabel("Average fraction of\nmutated genome", fontsize=10)
+    axes[2].tick_params(axis='x', labelsize=8)
+    axes[2].tick_params(axis='y', labelsize=8)
 
     ax3_min, ax3_max = 100000, -1
     for p, p_sec, color in zip(pop_names, pop_sec, COLORS[:len(pop_names)]):
@@ -100,21 +106,23 @@ if __name__ == "__main__":
         if len(rec) > 0:
             rec = rec[ss_ind_rec_mut:]
             rec_x = get_x(rec)
-            rec_y = gaussian_kde(rec)(rec_x)
+            rec_y = gaussian_kde(rec)(rec_x)/len(rec)
             axes[3].plot(rec_x, rec_y, color=color, ls='--')
             axes[3].fill(rec_x, rec_y, color=color, alpha=0.1)
         mut = mut[ss_ind_rec_mut:]
         mut_x = get_x(mut)
-        mut_y = gaussian_kde(mut)(mut_x)
+        mut_y = gaussian_kde(mut)(mut_x)/len(mut)
         axes[3].plot(mut_x, mut_y, color=color, ls='-.')
         axes[3].fill(mut_x, mut_y, color=color, alpha=0.1)
         sel = sel[ss_ind:]
         sel_x = get_x(sel)
-        sel_y = gaussian_kde(sel)(sel_x)
+        sel_y = gaussian_kde(sel)(sel_x)/len(sel)
         axes[3].plot(sel_x, sel_y, color=color, ls='-')
         axes[3].fill(sel_x, sel_y, color=color, alpha=0.1, label=p)
-    axes[3].set_xlabel("Normalized weight")
-    axes[3].set_ylabel("Abundance")
+    axes[3].set_xlabel("Normalized weight", fontsize=10)
+    axes[3].set_ylabel("Abundance", fontsize=10)
+    axes[3].tick_params(axis='x', labelsize=8)
+    axes[3].tick_params(axis='y', labelsize=8)
 
     for ax in axes:
         ax.legend(loc="best", fontsize=10)

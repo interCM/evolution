@@ -1,5 +1,5 @@
 import sys
-assert sys.version_info[:2] == (3, 5), "Use python version 3.5"
+assert sys.version_info[:2] >= (3,3), "Use python version >= 3.3"
 import os, random, bisect, math, ast, configparser, shutil, itertools
 from collections import Counter
 from operator import attrgetter
@@ -211,26 +211,26 @@ class SexualOrganism(AsexualOrganism):
 class AsexualPopulation(object):
     def __init__(self, organisms, mut_prob, ti_prob, sel_strength,
             children_number, rec_freq, rec_rate, partner_sel_strength,
-            eliminate_oldest=False):
+            eliminate_oldest):
         """ Represents a population of AsexualOrganisms.
         Args:
         organisms - list of AsexualOrganisms. All organisms in the population
             should have the same genome length
         mut_prob - probability of mutation per positinon (0 <= float <= 1) 
-        ti_prob - probability thet occured mutation will be a transition
+        ti_prob - probability that occured mutation will be a transition
             (float <= 1)
         sel_strength - selection strength, determines which fraction of the
             populaiton is considered for reproduction at each reproduction
             round (0 <= float <= 1)
         children_number - number of offsprings generated per replication
-            round. Only an offspring with highest weight is kept in the
-            population, others are ignored (int)
+            round. Only an offspring with the highest weight is retained in
+            the population, others are ignored (int)
         rec_freq - probability of recombination event per round of
             replication (float <= 1)
         rec_rate - probability of crossover event per base (0 <= float <= 1)
         partner_sel_strength - determines which fraction of the populaiton is
             considered when mating partner is selected (0 <= float <= 1)
-        eliminate_oldest - boolean flag. If true an oldest organism is
+        eliminate_oldest - boolean flag. If true the oldest organism is
             eliminated from the population after each reproduction round,
             otherwise random organism is eliminated
         """
@@ -358,9 +358,10 @@ class AsexualPopulation(object):
     @classmethod
     def generate_random(cls, pop_size, mut_prob, ti_prob, sel_strength,
             children_number, rec_freq, rec_rate, partner_sel_strength,
-            genome_len, pbw):
+            genome_len, pbw, eliminate_oldest):
         """ Generate a random AsexualPopulation with given parameters.
         Args:
+        pop_size - number of organisms in the populaiton (int)
         genome_len and pbw are the same as in AsexualOrganism.generate_random
         the rest is the same as in AsexualPopulation 
         pbw - positional base weights (list of dicts)
@@ -369,8 +370,9 @@ class AsexualPopulation(object):
         """
         organisms = [ AsexualOrganism.generate_random(genome_len, pbw)
             for _ in range(pop_size) ]
-        return cls( organisms, mut_prob, ti_prob, sel_strength,
-            children_number, rec_freq, rec_rate, partner_sel_strength )
+        return cls(organisms, mut_prob, ti_prob, sel_strength,
+            children_number, rec_freq, rec_rate, partner_sel_strength,
+            eliminate_oldest)
 
     def moran_step(self):
         """ Performs a single Moran-like reproduction round.
@@ -428,7 +430,7 @@ class SexualPopulation(AsexualPopulation):
     @classmethod
     def generate_random(cls, pop_size, mut_prob, ti_prob, sel_strength,
             children_number, rec_freq, rec_rate, partner_sel_strength,
-            male_number, genome_len, pbw):
+            male_number, genome_len, pbw, eliminate_oldest):
         """ Generate a random SexualPopulation with given parameters.
         Args:
         the same as in AsexualPopulation.generate_random +
@@ -440,8 +442,9 @@ class SexualPopulation(AsexualPopulation):
             for _ in range(pop_size - male_number) ]
         organisms += [ SexualOrganism.generate_random(genome_len, pbw, 'M')
             for _ in range(male_number) ]
-        return cls( organisms, mut_prob, ti_prob, sel_strength,
-            children_number, rec_freq, rec_rate, partner_sel_strength )
+        return cls(organisms, mut_prob, ti_prob, sel_strength,
+            children_number, rec_freq, rec_rate, partner_sel_strength,
+            eliminate_oldest)
 
     def moran_step(self):
         """ The same as AsexualPopulation.moran_step but the second parent is
@@ -547,6 +550,7 @@ class Environment(object):
             assert 0 <= rec_rate <= 1
             partner_sel_strength = float(curr_pop["partner_sel_strength"])
             assert 0 <= partner_sel_strength <= 1
+            eliminate_oldest = ast.literal_eval(curr_pop["eliminate_oldest"])
             has_sex = ast.literal_eval(curr_pop["has_sex"])
             if has_sex:
                 male_number = int(curr_pop["male_number"])
@@ -554,11 +558,12 @@ class Environment(object):
                 pop = SexualPopulation.generate_random( pop_size, mut_prob,
                     ti_prob, sel_strength, children_number, rec_freq,
                     rec_rate, partner_sel_strength, male_number, genome_len,
-                    ppbw )
+                    ppbw, eliminate_oldest)
             else:
                 pop = AsexualPopulation.generate_random( pop_size, mut_prob,
                     ti_prob, sel_strength, children_number, rec_freq,
-                    rec_rate, partner_sel_strength, genome_len, ppbw )
+                    rec_rate, partner_sel_strength, genome_len, ppbw,
+                    eliminate_oldest)
             name = curr_pop["name"]
             populations[name] = pop
         environment = cls(populations, uoai, pbwsai, ppbw, apbw)

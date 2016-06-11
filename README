@@ -5,7 +5,7 @@ config.cfg - template configuration file
 produceplots.py - a module for visualization of the simulation results
 
 Package is written for python 3 and will not work with python 2.
-Testing was done with python 3.5.
+Testing was done with python 3.5, however versions >= 3.3 should also work.
 
 
 Next sections describe how to
@@ -15,7 +15,9 @@ an evolution experiment
 > and visualize
 its outcome.
 
+
 Configuration.
+==============
 The first thing you need to do after you came up with the idea of the
 experiment is setting up of a corresponding configuration file. For this
 purpose you can either edit an existing config.cfg file which is a part of the
@@ -24,35 +26,135 @@ All simulation related parameters should be included into configuration file.
 The structure and syntax of configuration file should conform with the
 specification of the python's configparser module.
 Sections and parameters in the configuration file (see config.cfg):
+
 [DEFAULT]
 - This section is optional. If some required parameter from one of the next
   sections is absent the program will try to take this parameter from the
   DEFAULT section. If the program fails to find a required parameter in the
   configuration file it will be terminated with error.
+  
 [common]
-interations   - required (integer)
-run_id        - required (string)
-runs_base_dir - required (string, a directory runs_base_dir will be created if
-                          absent)
+interations - required (integer).
+    Number of iterations to perform. Each iteration represents Moran-like
+    reproduction round: one organism is eleminated from the population (either
+    random or the oldest) and one organism is added to the population.
+run_id - required (string).
+    Name of the directory inside {runs_base_dir}, where all results
+    corresponding to this run will be stored as well as runs's starting
+    configuration, so you can easily repeat the simulation with the same
+    setup.
+runs_base_dir - required (string).
+    Name of the directory where results of all runs are stored. If absent it
+    will be created.
+                
 [environment]
-primary_pos_base_weights        - required (see format in config.cfg)
-update_origin_at_iter           - optional (space delimited list of integers)
-pos_base_weights_switch_at_iter - optional (space delimited list of integers)
-alternative_pos_base_weights    - optional (same as primary_pos_base_weights)
+primary_pos_base_weights - required (format:
+                    1 : A 0.65, G 0.25, C 0.1, T 0
+                    2-4,6,8 : A 0.7, G 0.1, C 0.1, T 0.1
+                    5,7 : A 0.55, G 0.2, C 0.2, T 0
+                     |    |   |
+             positions  base  weight).
+    The sum of positional base weights (pbw) over all positions determine the
+    weight (fitness) of the organism in the population.
+    Primary pbw will be applied to initialize all organisms in all populations
+    and then will be used until the smallest number from the
+    pos_base_weights_switch_at_iter is reached. After that pbw of all
+    organisms in all populations are switched to the
+    alternative_pos_base_weights. When the second smallest number from the
+    pos_base_weights_switch_at_iter is reached all pbw are swetched back to
+    the primary_pos_base_weights and so on.
+    Provided positions of the pbw should cover a range of integers from 1 to n
+    (n = 1, 2, ...) without gaps. If n is less than the length of genome
+    (genome_len parameter) then weight to positions will be assigned
+    circulary: pbw(i*n+k) = pbw(k) (k<n, i = 0,1, ...). So if only a base
+    weights for position 1 is indicated then all position will recieve this
+    weights.
+update_origin_at_iter - optional (space delimited list of integers).
+    Iterations at which origin genome of each organism in all populations
+    will be updated to the current state of genome. Origin genome is used
+    when the number of accumulated mutations is counted (i.e. the number of
+    mutations for each organism is equal to the number of mismatches between
+    current state of genome and origin genome). The parameter can be left
+    empty, in this case initial state of genome (random sequence) will be used
+    as an origin during the whole simulation.
+pos_base_weights_switch_at_iter - optional (space delimited list of integers).
+    Iterations at which positional base weights of all organisms in all
+    populations will be swiched between primary and alternative positional
+    base weights. If this parameter is not given only primary_pos_base_weights
+    will be used during the simulation. 
+alternative_pos_base_weights - optional (same as primary_pos_base_weights).
+
 [population_1]
-name                 - required (string, unique for each population)
-pop_size             - required (integer)
-genome_len           - required (integer)
-mut_prob             - required (0 <= float <= 1)
-ti_prob              - required (0 <= float <= 1)
-sel_strength         - required (0 <= float <= 1)
-children_number      - required (integer)
-rec_freq             - required (0 <= float <= 1)
-rec_rate             - required (0 <= float <= 1)
+name - required (string, unique for each population).
+    Name that will be used to refer to the population in the run_log.txt
+    file and in the figure.
+pop_size - required (integer).
+    Number of organisms in the population.
+genome_len - required (integer).
+    Length of organisms' genome (the same for all organisms in the
+    population).
+mut_prob - required (0 <= float <= 1).
+    Probability of mutation per positinon.
+ti_prob - required (0 <= float <= 1).
+    Probability that occured mutation will be a transition mutation.
+sel_strength - required (0 <= float <= 1).
+    Determines which top-weighted fraction of the populaiton is considered to
+    select an organism that will reproduce at the current reproduction round.
+    If recombination does not take place during the current reproduction round
+    (whether it will happen or not is determined in the beginning of each
+    round based on the rec_freq parameter) then it will be the only
+    reproducing organism, otherwise a mating partner is required that will be
+    selected based on the partner_sel_strength parameter.
+children_number - required (integer).
+    Number of offsprings generated per replication round. Only an offspring
+    with the highest weight is retained in the population, others are ignored.
+rec_freq - required (0 <= float <= 1).
+    Probability that recombination event will take place during a round of
+    replication. If recombination takes place then two organisms are selected
+    from the population (the first organism is selected based on the
+    sel_strength parameter, the second is selected based on the
+    partner_sel_strength parameter and a sex of the first organisms if it is a
+    sexual population) to produce children_number of offsprings. Each
+    offspring is generating by random recombination and mutation of parantal
+    genomes. If no recombination occurs then a single organism is selected
+    based on the sel_strength parameter and offsprings are generated by
+    introducing random mutations into the parantal genome. It is also worth
+    noting that recombination can take place in the population with no sexual
+    differentiation (i.e. has_sex = False).
+    E.g. if rec_freq = 1, recombination will occure at each reproduction
+    round. Other way round if rec_freq = 0 then recombination will never
+    happen.
+rec_rate - required (0 <= float <= 1).
+    Probability of crossover event per base. If recombination takes place this
+    parameter determines how frequently an offsprings' genome will be switched
+    between genomes of his parents.
+    E.g. if rec_rate = 1 then each next base in the genome of the offspring
+    will be taken from different paren. If rec_rate = 0 then the whole genome
+    of the offspring will be taken from the first parent (equivalent to
+    setting rec_freq = 0).
 partner_sel_strength - required (0 <= float <= 1)
-has_sex              - required (boolean)
-male_number          - required if has_sex is True otherwise will be ignored
-                                (integer)
+has_sex - required (boolean).
+    Determines whether there will be different sexes in the population or it
+    will be asexual. This parameter is only important if recombination takes
+    place, if so then the mating partner of the opposite sex is selected for
+    reproduction. If has_sex = True but recombination is not happaning during
+    the current reproduction round then any organism from the population,
+    regardless of its sex, is allowed to produce offsprings.
+male_number - required if has_sex is True otherwise will be ignored (integer).
+    The number of males in the population (the rest pop_size - male_number
+    will be females).
+    Sexual compound of the population remains constant in the course of the
+    simulation while the sex of retained offspring is selected equal to the
+    sex of eliminated organism.
+eliminate_oldest - required (boolean).
+    If true the oldest organism is eliminated from the population after each
+    reproduction round, otherwise random organism is eliminated. An age of the
+    organism is equal to the number of iterations (reproduction rounds) it
+    exists in the population.
+    
+[population_2]
+Settings for the second population.
+...
 
 Theoretically nothing prevents you from running 100 different populations
 simultaneously. However, it is not recommended to start simulations with more
@@ -62,6 +164,7 @@ evolution.py file.
 
 
 Starting simulation.
+====================
 When configuration file is constructed you can start simulation with:
 $python3 evolution.py config.cfg
 If everything goes fine [runs_base_dir]/[run_id] folder will be created. This
@@ -75,6 +178,7 @@ Simulation progress will be shown in the command line.
 
 
 Visualization of the results.
+=============================
 When simulation run is finished the data from the corresponding run_log.txt
 file can be easily visualized with:
 $python3 produceplots.py [runs_base_dir]/[run_id]
