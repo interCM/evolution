@@ -1,10 +1,10 @@
 import sys
-assert sys.version_info[:2] == (3, 5), "Use python 3.5"
+assert sys.version_info[:2] >= (3,3), "Use python version >= 3.3"
 import os, configparser
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde
+from scipy.stats import gaussian_kde, ranksums
 
 # These are the "Tableau 20" colors as RGB
 TABLEAU20 = [(31, 119, 180), (174, 199, 232), (255, 127, 14), (255, 187, 120),
@@ -19,21 +19,39 @@ for i in range(len(TABLEAU20)):
 
 COLORS = [c for c in TABLEAU20[::2]]
 
-def get_x(values):
-    mi = min(values)
-    ma = max(values)
+
+def get_x(weights):
+    """ Calculates x points for a given array of weights so that they cover all
+    weight values (with small offsets by sides) and their density is 1000 points
+    per unit segment [0,1]. Thus more x points will be generated for weights
+    with broader range compared to weights with more narrow diapason.
+    """
+    mi = min(weights)
+    ma = max(weights)
     r = ma - mi
     mi = mi - 0.001*r
     ma = ma + 0.001*r
-    return np.linspace(mi, ma, 200)
+    return np.linspace(mi, ma, int(1000*(ma - mi)))
 
-def get_steady_sate_ind(average_weights):
+    
+def get_steady_sate_ind(average_weights, pop_name):
+    """ Estimates when steady state is reached.
+    Returns:
+        ss_ind: index of the steady state start in the array of averaged
+            weights, 'AV_WEIGHT'.
+    """
     deviations = average_weights[1:] - average_weights[:-1]
     min_n = int(0.1*len(average_weights))
     min_dev_ind = np.argmin(np.absolute(np.cumsum(deviations[::-1]))[min_n:])
-    if min_dev_ind == 0:
-        print("Warning! Probably steady state is detected incorrectly")
     ss_ind = (len(average_weights) - min_n - min_dev_ind)
+    ss = average_weights[ss_ind:]
+    ss_half_len = len(ss)//2
+    ss_first_half = ss[:ss_half_len]
+    ss_second_half = ss[ss_half_len:2*ss_half_len]
+    wstat, pval = ranksums(ss_first_half, ss_second_half)
+    if pval < 0.01:
+        print(("Warning! Probably steady state for population '{pop}' is "
+        "detected incorrectly, p-value={pv:.4f}").format(pop=pop_name, pv=pval))
     return ss_ind
 
 
@@ -65,7 +83,7 @@ if __name__ == "__main__":
     ss_indixes = []
     for p, color in zip(pop_names, COLORS[:len(pop_names)]):
         y = df.loc[(df["pop"]==p) & (df["par"]=="AV_WEIGHT"), "val"].values
-        ss_ind = get_steady_sate_ind(y)
+        ss_ind = get_steady_sate_ind(y, p)
         ss_indixes.append(ss_ind)
         pop_steady_state_ind[p] = ss_ind
         axes[0].plot(range(len(y)), y, color=color, label=p)
@@ -106,17 +124,20 @@ if __name__ == "__main__":
         if len(rec) > 0:
             rec = rec[ss_ind_rec_mut:]
             rec_x = get_x(rec)
-            rec_y = gaussian_kde(rec)(rec_x)/len(rec)
+            rec_y = gaussian_kde(rec)(rec_x)
+            rec_y /= sum(rec_y)
             axes[3].plot(rec_x, rec_y, color=color, ls='--')
             axes[3].fill(rec_x, rec_y, color=color, alpha=0.1)
         mut = mut[ss_ind_rec_mut:]
         mut_x = get_x(mut)
-        mut_y = gaussian_kde(mut)(mut_x)/len(mut)
+        mut_y = gaussian_kde(mut)(mut_x)
+        mut_y /= sum(mut_y)
         axes[3].plot(mut_x, mut_y, color=color, ls='-.')
         axes[3].fill(mut_x, mut_y, color=color, alpha=0.1)
         sel = sel[ss_ind:]
         sel_x = get_x(sel)
-        sel_y = gaussian_kde(sel)(sel_x)/len(sel)
+        sel_y = gaussian_kde(sel)(sel_x)
+        sel_y /= sum(sel_y)
         axes[3].plot(sel_x, sel_y, color=color, ls='-')
         axes[3].fill(sel_x, sel_y, color=color, alpha=0.1, label=p)
     axes[3].set_xlabel("Normalized weight", fontsize=10)
